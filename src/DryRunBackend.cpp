@@ -23,5 +23,5 @@ bool DryRunBackend::execute(
 
 void DryRunBackend::releaseAll()
 {
-    std::cout << "Dry-run backend released all inputs\n";
+    // Nothing to release in dry-run mode.
 }

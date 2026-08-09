@@ -1,4 +1,4 @@
-#include "MouseRecorder.h"
+#include "InputRecorder.h"
 #include "DisplayMetadata.h"
 #include "Settings.h"
 
@@ -297,7 +297,7 @@ LRESULT CALLBACK recorderWindowProcedure(
 }
 }
 
-bool MouseRecorder::record(
+bool InputRecorder::record(
     Recording& recording,
     const Settings& settings,
     std::string& errorMessage)
@@ -306,7 +306,7 @@ bool MouseRecorder::record(
         GetModuleHandle(nullptr);
 
     const wchar_t* windowClassName =
-        L"InputPlayRawMouseRecorder";
+        L"InputPlayRawInputRecorder";
 
     WNDCLASSW windowClass{};
     windowClass.lpfnWndProc = recorderWindowProcedure;

@@ -5,7 +5,7 @@
 
 #include <string>
 
-class MouseRecorder
+class InputRecorder
 {
 public:
     bool record(

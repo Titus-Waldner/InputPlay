@@ -2,11 +2,12 @@
 #include "RecordingFile.h"
 #include "DryRunBackend.h"
 #include "SendInputBackend.h"
-#include "MouseRecorder.h"
+#include "InputRecorder.h"
 #include "Settings.h"
 #include "RecordingValidator.h"
 #include "ExitCodes.h"
 #include "CancellationSession.h"
+#include "PlaybackOptions.h"
 
 #include <limits>
 #include <iomanip>
@@ -158,7 +159,7 @@ int runRecordCommand(
     const Settings& settings)
 {
     Recording recording;
-    MouseRecorder recorder;
+    InputRecorder recorder;
     std::string errorMessage;
 
     if (!recorder.record(
@@ -779,25 +780,17 @@ int runCancelCommand(
 int runPlayCommand(
     const std::string& filePath,
     IInputBackend& backend,
-    bool alignStart,
-    bool strictDisplay,
-    bool ignoreDisplay,
-    bool startImmediately,
     const Settings& settings,
-    unsigned int loopCount,
-    bool infiniteLoops,
-    const std::string& sessionName,
-    bool timeoutEnabled,
-    unsigned int timeoutSeconds)
+    const PlaybackOptions& options)
 {
     Recording recording;
     std::string errorMessage;
 	CancellationSession cancellationSession;
 
-	if (!sessionName.empty())
+	if (!options.sessionName.empty())
 	{
 		if (!cancellationSession.create(
-				sessionName,
+				options.sessionName,
 				errorMessage))
 		{
 			std::cerr
@@ -810,7 +803,7 @@ int runPlayCommand(
 
 		std::cout
 			<< "Playback session: "
-			<< sessionName
+			<< options.sessionName
 			<< '\n';
 	}
 
@@ -834,8 +827,8 @@ int runPlayCommand(
 	}
 	if (!checkDisplayCompatibility(
         recording,
-        strictDisplay,
-        ignoreDisplay,
+        options.strictDisplay,
+        options.ignoreDisplay,
         errorMessage))
 	{
 		std::cerr
@@ -846,7 +839,7 @@ int runPlayCommand(
 		return ExitCode::DisplayIncompatible;
 	}
 
-	if (alignStart
+	if (options.alignStart
 		&& !recording.hasStartingCursorPosition())
 	{
 		std::cerr
@@ -857,11 +850,11 @@ int runPlayCommand(
 	}
 
 	const CancellationSession* sessionPointer =
-		sessionName.empty()
+		options.sessionName.empty()
 		? nullptr
 		: &cancellationSession;
 
-	if (!startImmediately)
+	if (!options.startImmediately)
 	{
 		if (!waitForPlaybackStart(
 				settings,
@@ -888,13 +881,13 @@ int runPlayCommand(
         << keyNameFromVirtualKey(settings.playCancelKey)
         << " cancels\n";
 
-    if (infiniteLoops)
+    if (options.infiniteLoops)
     {
         std::cout << "Loops: infinite\n";
     }
     else
     {
-        std::cout << "Loops: " << loopCount << '\n';
+        std::cout << "Loops: " << options.loopCount << '\n';
     }
 
     using Clock = std::chrono::steady_clock;
@@ -905,15 +898,15 @@ int runPlayCommand(
 	Clock::time_point timeoutDeadline =
 		Clock::time_point::max();
 
-	if (timeoutEnabled)
+	if (options.timeoutEnabled)
 	{
 		timeoutDeadline =
 			operationStart
-			+ std::chrono::seconds(timeoutSeconds);
+			+ std::chrono::seconds(options.timeoutSeconds);
 
 		std::cout
 			<< "Timeout: "
-			<< timeoutSeconds
+			<< options.timeoutSeconds
 			<< " seconds\n";
 	}
 
@@ -921,9 +914,9 @@ int runPlayCommand(
     bool cancelled = false;
 	bool timedOut = false;
 
-    while (infiniteLoops || completedLoops < loopCount)
+    while (options.infiniteLoops || completedLoops < options.loopCount)
 	{
-		if (timeoutEnabled
+		if (options.timeoutEnabled
 			&& Clock::now() >= timeoutDeadline)
 		{
 			timedOut = true;
@@ -937,7 +930,7 @@ int runPlayCommand(
 			break;
 		}
 
-		if (alignStart)
+		if (options.alignStart)
 		{
 			if (!SetCursorPos(
 					recording.startingCursorX(),
@@ -987,7 +980,7 @@ int runPlayCommand(
 
             while (true)
 			{
-				if (timeoutEnabled
+				if (options.timeoutEnabled
 					&& Clock::now() >= timeoutDeadline)
 				{
 					timedOut = true;
@@ -1240,20 +1233,9 @@ int main(int argc, char* argv[])
 		}
 
 		bool useSendInput = false;
-		bool alignStart = false;
-		bool infiniteLoops = false;
-		bool strictDisplay = false;
-		bool ignoreDisplay = false;
-		bool startImmediately = false;
-		bool timeoutEnabled = false;
 
-		unsigned int timeoutSeconds = 0;
-
-		std::string sessionName;
-
-
-		unsigned int loopCount =
-			settings.defaultLoops;
+		PlaybackOptions options;
+		options.loopCount = settings.defaultLoops;
 
 		for (int argumentIndex = 3;
 			 argumentIndex < argc;
@@ -1268,19 +1250,19 @@ int main(int argc, char* argv[])
 			}
 			else if (option == "--start-immediately")
 			{
-				startImmediately = true;
+				options.startImmediately = true;
 			}
 			else if (option == "--align-start")
 			{
-				alignStart = true;
+				options.alignStart = true;
 			}
 			else if (option == "--strict-display")
 			{
-				strictDisplay = true;
+				options.strictDisplay = true;
 			}
 			else if (option == "--ignore-display")
 			{
-				ignoreDisplay = true;
+				options.ignoreDisplay = true;
 			}
 			else if (option == "--session")
 			{
@@ -1292,11 +1274,10 @@ int main(int argc, char* argv[])
 					return ExitCode::InvalidArguments;
 				}
 
-				sessionName =
+				options.sessionName =
 					argv[++argumentIndex];
 
-				if (!CancellationSession::isValidSessionName(
-						sessionName))
+				if (!CancellationSession::isValidSessionName(options.sessionName))
 				{
 					std::cerr
 						<< "Invalid session name. Use only letters, "
@@ -1348,10 +1329,10 @@ int main(int argc, char* argv[])
 							"timeout is too large");
 					}
 
-					timeoutSeconds =
+					options.timeoutSeconds =
 						static_cast<unsigned int>(parsed);
 
-					timeoutEnabled = true;
+					options.timeoutEnabled = true;
 				}
 				catch (...)
 				{
@@ -1378,7 +1359,7 @@ int main(int argc, char* argv[])
 
 				if (loopValue == "inf")
 				{
-					infiniteLoops = true;
+					options.infiniteLoops = true;
 				}
 				else
 				{
@@ -1411,7 +1392,7 @@ int main(int argc, char* argv[])
 								"loop count is too large");
 						}
 
-						loopCount =
+						options.loopCount =
 							static_cast<unsigned int>(parsed);
 					}
 					catch (...)
@@ -1436,7 +1417,7 @@ int main(int argc, char* argv[])
 			}
 		}
 
-		if (strictDisplay && ignoreDisplay)
+		if (options.strictDisplay && options.ignoreDisplay)
 		{
 			std::cerr
 				<< "--strict-display and --ignore-display "
@@ -1454,16 +1435,8 @@ int main(int argc, char* argv[])
 			return runPlayCommand(
 				argv[2],
 				backend,
-				alignStart,
-				strictDisplay,
-				ignoreDisplay,
-				startImmediately,
 				settings,
-				loopCount,
-				infiniteLoops,
-				sessionName,
-				timeoutEnabled,
-				timeoutSeconds);
+				options);
 		}
 
 		DryRunBackend backend;
@@ -1471,16 +1444,8 @@ int main(int argc, char* argv[])
 		return runPlayCommand(
 			argv[2],
 			backend,
-			alignStart,
-			strictDisplay,
-			ignoreDisplay,
-			startImmediately,
 			settings,
-			loopCount,
-			infiniteLoops,
-			sessionName,
-			timeoutEnabled,
-			timeoutSeconds);
+			options);
 	}
 
     std::cerr << "Unknown command: "
