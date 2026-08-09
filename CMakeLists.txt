@@ -11,4 +11,5 @@ add_executable(
     InputPlay
     src/main.cpp
     src/Recording.cpp
+    src/RecordingFile.cpp
 )
