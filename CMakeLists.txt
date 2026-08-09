@@ -19,4 +19,5 @@ add_executable(
     src/Settings.cpp
 	src/RecordingValidator.cpp
 	src/CancellationSession.cpp
+	src/PlaybackEngine.cpp
 )
