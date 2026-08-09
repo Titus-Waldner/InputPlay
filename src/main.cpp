@@ -52,6 +52,9 @@ const char* eventTypeName(EventType type)
 			
 		case EventType::Wait:
 			return "Wait";
+			
+		case EventType::MouseTeleport:
+			return "MouseTeleport";
 
         default:
             return "Unknown";
@@ -99,13 +102,18 @@ Recording createSampleRecording()
     return recording;
 }
 
-int runRecordCommand(const std::string& filePath)
+int runRecordCommand(
+    const std::string& filePath,
+    const Settings& settings)
 {
     Recording recording;
     MouseRecorder recorder;
     std::string errorMessage;
 
-    if (!recorder.record(recording, errorMessage))
+    if (!recorder.record(
+        recording,
+        settings,
+        errorMessage))
     {
         std::cerr << "Recording failed: "
                   << errorMessage
@@ -545,7 +553,9 @@ int main(int argc, char* argv[])
             return 2;
         }
 
-        return runRecordCommand(argv[2]);
+        return runRecordCommand(
+			argv[2],
+			settings);
     }
 
     if (command == "info")

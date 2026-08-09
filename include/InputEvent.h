@@ -10,7 +10,8 @@ enum class EventType
     MouseWheel,
     KeyDown,
     KeyUp,
-    Wait
+    Wait,
+    MouseTeleport
 };
 
 struct InputEvent

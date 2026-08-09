@@ -47,6 +47,9 @@ bool integerToEventType(int value, EventType& type)
         case 6:
             type = EventType::Wait;
             return true;
+	    case 7:
+			type = EventType::MouseTeleport;
+			return true;
 
         default:
             return false;

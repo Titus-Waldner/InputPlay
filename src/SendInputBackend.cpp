@@ -100,6 +100,22 @@ bool SendInputBackend::execute(
                 0,
                 MOUSEEVENTF_MOVE,
                 errorMessage);
+				
+		case EventType::MouseTeleport:
+			if (!SetCursorPos(
+					event.mouseX,
+					event.mouseY))
+			{
+				errorMessage =
+					"Windows was unable to teleport the cursor.";
+
+				return false;
+			}
+
+			errorMessage.clear();
+			return true;
+
+
 
         case EventType::MouseButtonDown:
             switch (event.mouseButton)

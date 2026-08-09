@@ -1,5 +1,6 @@
 #include "MouseRecorder.h"
 #include "DisplayMetadata.h"
+#include "Settings.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -14,14 +15,31 @@ constexpr int LeftMouseButton = 1;
 constexpr int RightMouseButton = 2;
 constexpr int MiddleMouseButton = 3;
 
+using RecordingClock = std::chrono::steady_clock;
+
 Recording* activeRecording = nullptr;
-std::chrono::steady_clock::time_point recordingStart;
+
+RecordingClock::time_point recordingStart;
+RecordingClock::time_point pauseStart;
+
+RecordingClock::duration accumulatedPausedTime{};
+
+int recordStartKey = 0;
+int recordPauseKey = 0;
+int recordStopKey = 0;
+
+bool recordingStarted = false;
+bool recordingPaused = false;
 
 std::uint64_t currentTimestampMicroseconds()
 {
-    const auto elapsed =
-        std::chrono::steady_clock::now()
-        - recordingStart;
+    const RecordingClock::time_point now =
+        RecordingClock::now();
+
+    const RecordingClock::duration elapsed =
+        now
+        - recordingStart
+        - accumulatedPausedTime;
 
     return static_cast<std::uint64_t>(
         std::chrono::duration_cast<
@@ -57,10 +75,12 @@ void addMouseButtonEvent(
 
 void processRawMouseInput(const RAWMOUSE& mouse)
 {
-    if (activeRecording == nullptr)
-    {
-        return;
-    }
+    if (activeRecording == nullptr
+    || !recordingStarted
+    || recordingPaused)
+	{
+		return;
+	}
 
     const std::uint64_t timestamp =
         currentTimestampMicroseconds();
@@ -150,19 +170,33 @@ void processRawMouseInput(const RAWMOUSE& mouse)
     }
 }
 
+bool isRecordingControlKey(
+    unsigned int virtualKey)
+{
+    return
+        virtualKey
+            == static_cast<unsigned int>(
+                recordStartKey)
+        || virtualKey
+            == static_cast<unsigned int>(
+                recordPauseKey)
+        || virtualKey
+            == static_cast<unsigned int>(
+                recordStopKey);
+}
 
 void processRawKeyboardInput(const RAWKEYBOARD& keyboard)
 {
-    if (activeRecording == nullptr)
-    {
-        return;
-    }
+    if (activeRecording == nullptr || !recordingStarted || recordingPaused)
+	{
+		return;
+	}
 
     // F12 is reserved for stopping the recording.
-    if (keyboard.VKey == VK_F12)
-    {
-        return;
-    }
+    if (isRecordingControlKey(keyboard.VKey))
+	{
+		return;
+	}
 
     const bool keyReleased =
         (keyboard.Flags & RI_KEY_BREAK) != 0;
@@ -265,6 +299,7 @@ LRESULT CALLBACK recorderWindowProcedure(
 
 bool MouseRecorder::record(
     Recording& recording,
+    const Settings& settings,
     std::string& errorMessage)
 {
     const HINSTANCE instanceHandle =
@@ -337,8 +372,98 @@ bool MouseRecorder::record(
 
 		return false;
 	}
+	
+	recording.clear();
 
-    recording.clear();
+	recordStartKey = settings.recordStartKey;
+	recordPauseKey = settings.recordPauseKey;
+	recordStopKey = settings.recordStopKey;
+
+	recordingStarted = false;
+	recordingPaused = false;
+
+	activeRecording = &recording;
+
+	std::cout << "Recording armed\n";
+	std::cout
+		<< "Press "
+		<< keyNameFromVirtualKey(recordStartKey)
+		<< " to start recording\n";
+
+	std::cout
+		<< "Press "
+		<< keyNameFromVirtualKey(recordStopKey)
+		<< " to cancel before recording starts\n";
+
+	MSG message{};
+
+	bool startKeyWasDown =
+		(GetAsyncKeyState(recordStartKey) & 0x8000) != 0;
+
+	bool stopKeyWasDown =
+		(GetAsyncKeyState(recordStopKey) & 0x8000) != 0;
+
+	bool cancelledBeforeStart = false;
+
+	while (!recordingStarted)
+	{
+		while (PeekMessage(
+			&message,
+			nullptr,
+			0,
+			0,
+			PM_REMOVE))
+		{
+			TranslateMessage(&message);
+			DispatchMessage(&message);
+		}
+
+		const bool startKeyIsDown =
+			(GetAsyncKeyState(recordStartKey) & 0x8000) != 0;
+
+		const bool stopKeyIsDown =
+			(GetAsyncKeyState(recordStopKey) & 0x8000) != 0;
+
+		if (stopKeyIsDown && !stopKeyWasDown)
+		{
+			cancelledBeforeStart = true;
+			break;
+		}
+
+		if (startKeyIsDown && !startKeyWasDown)
+		{
+			while ((GetAsyncKeyState(recordStartKey)
+					& 0x8000) != 0)
+			{
+				Sleep(1);
+			}
+
+			recordingStarted = true;
+			break;
+		}
+
+		startKeyWasDown = startKeyIsDown;
+		stopKeyWasDown = stopKeyIsDown;
+
+		Sleep(1);
+	}
+
+	if (cancelledBeforeStart)
+	{
+		activeRecording = nullptr;
+		DestroyWindow(window);
+
+		while ((GetAsyncKeyState(recordStopKey)
+				& 0x8000) != 0)
+		{
+			Sleep(1);
+		}
+
+		errorMessage =
+			"Recording was cancelled before it started.";
+
+		return false;
+	}
 
 	POINT startingCursorPosition{};
 
@@ -348,7 +473,7 @@ bool MouseRecorder::record(
 			startingCursorPosition.x,
 			startingCursorPosition.y);
 	}
-	
+
 	DisplayMetadata displayMetadata;
 	std::string displayError;
 
@@ -356,8 +481,8 @@ bool MouseRecorder::record(
 			displayMetadata,
 			displayError))
 	{
-		DestroyWindow(window);
 		activeRecording = nullptr;
+		DestroyWindow(window);
 
 		errorMessage =
 			"Unable to capture display configuration: "
@@ -367,48 +492,143 @@ bool MouseRecorder::record(
 	}
 
 	recording.setDisplayMetadata(displayMetadata);
-	
-	
 
-	activeRecording = &recording;
-	recordingStart = std::chrono::steady_clock::now();
+	recordingStart = RecordingClock::now();
 
-    std::cout << "Recording mouse and keyboard input\n";
-	std::cout << "Mouse movement, buttons, wheel, and keyboard are enabled\n";
-    std::cout << "Press F12 to stop recording\n";
+	accumulatedPausedTime =
+		RecordingClock::duration::zero();
 
-    MSG message{};
-    bool recordingActive = true;
+	recordingPaused = false;
 
-    while (recordingActive)
-    {
-        while (PeekMessage(
-            &message,
-            nullptr,
-            0,
-            0,
-            PM_REMOVE))
-        {
-            TranslateMessage(&message);
-            DispatchMessage(&message);
-        }
+	std::cout << "Recording started\n";
+	std::cout
+		<< "Press "
+		<< keyNameFromVirtualKey(recordPauseKey)
+		<< " to pause or resume\n";
 
-        if ((GetAsyncKeyState(VK_F12) & 0x8000) != 0)
-        {
-            recordingActive = false;
-        }
+	std::cout
+		<< "Press "
+		<< keyNameFromVirtualKey(recordStopKey)
+		<< " to stop and save\n";
 
-        Sleep(1);
-    }
+	bool recordingActive = true;
 
-    activeRecording = nullptr;
-    DestroyWindow(window);
+	stopKeyWasDown =
+		(GetAsyncKeyState(recordStopKey) & 0x8000) != 0;
 
-    while ((GetAsyncKeyState(VK_F12) & 0x8000) != 0)
-    {
-        Sleep(1);
-    }
+	bool pauseKeyWasDown =
+		(GetAsyncKeyState(recordPauseKey) & 0x8000) != 0;
 
-    errorMessage.clear();
-    return true;
+	while (recordingActive)
+	{
+		while (PeekMessage(
+			&message,
+			nullptr,
+			0,
+			0,
+			PM_REMOVE))
+		{
+			TranslateMessage(&message);
+			DispatchMessage(&message);
+		}
+
+		const bool stopKeyIsDown =
+			(GetAsyncKeyState(recordStopKey) & 0x8000) != 0;
+
+		if (stopKeyIsDown && !stopKeyWasDown)
+		{
+			recordingActive = false;
+		}
+
+		stopKeyWasDown = stopKeyIsDown;
+
+		if (!recordingActive)
+		{
+			break;
+		}
+
+		const bool pauseKeyIsDown =
+			(GetAsyncKeyState(recordPauseKey) & 0x8000) != 0;
+
+		if (pauseKeyIsDown && !pauseKeyWasDown)
+		{
+			if (!recordingPaused)
+			{
+				recordingPaused = true;
+				pauseStart = RecordingClock::now();
+
+				std::cout
+					<< "Recording paused\n";
+
+				std::cout
+					<< "Press "
+					<< keyNameFromVirtualKey(recordPauseKey)
+					<< " to resume or "
+					<< keyNameFromVirtualKey(recordStopKey)
+					<< " to stop and save\n";
+			}
+			else
+			{
+				const RecordingClock::time_point resumeTime =
+					RecordingClock::now();
+
+				accumulatedPausedTime +=
+					resumeTime - pauseStart;
+
+				recordingPaused = false;
+
+				POINT resumedCursorPosition{};
+
+				if (GetCursorPos(&resumedCursorPosition))
+				{
+					InputEvent teleportEvent;
+
+					teleportEvent.timestampMicroseconds =
+						currentTimestampMicroseconds();
+
+					teleportEvent.type =
+						EventType::MouseTeleport;
+
+					teleportEvent.mouseX =
+						resumedCursorPosition.x;
+
+					teleportEvent.mouseY =
+						resumedCursorPosition.y;
+
+					activeRecording->addEvent(
+						teleportEvent);
+				}
+
+				std::cout
+					<< "Recording resumed\n";
+			}
+		}
+
+		pauseKeyWasDown = pauseKeyIsDown;
+
+		Sleep(1);
+		
+		
+	}
+
+	if (recordingPaused)
+	{
+		accumulatedPausedTime +=
+			RecordingClock::now() - pauseStart;
+	}
+
+	recordingStarted = false;
+	recordingPaused = false;
+	activeRecording = nullptr;
+
+	DestroyWindow(window);
+
+	while ((GetAsyncKeyState(recordStopKey)
+			& 0x8000) != 0)
+	{
+		Sleep(1);
+	}
+
+	errorMessage.clear();
+	return true;
 }
