@@ -17,4 +17,5 @@ add_executable(
     src/MouseRecorder.cpp
     src/DisplayMetadata.cpp
     src/Settings.cpp
+	src/RecordingValidator.cpp
 )

@@ -4,6 +4,7 @@
 #include "SendInputBackend.h"
 #include "MouseRecorder.h"
 #include "Settings.h"
+#include "RecordingValidator.h"
 
 #include <iomanip>
 #include <chrono>
@@ -31,7 +32,8 @@ void printHelp()
 			  << "[--loops <number|inf>] "
 			  << "[--strict-display|--ignore-display]\n";
     std::cout << "  info <file>\n";
-    std::cout << "  test-model\n";
+	std::cout << "  validate <file>\n";
+	std::cout << "  test-model\n";
 }
 
 const char* eventTypeName(EventType type)
@@ -414,6 +416,89 @@ int runInfoCommand(const std::string& filePath)
         << '\n';
 
     return 0;
+}
+
+int runValidateCommand(
+    const std::string& filePath)
+{
+    Recording recording;
+    std::string errorMessage;
+
+    if (!RecordingFile::load(
+            filePath,
+            recording,
+            errorMessage))
+    {
+        std::cerr
+            << "Unable to load recording: "
+            << errorMessage
+            << '\n';
+
+        return 3;
+    }
+
+    std::cout
+        << "Validating recording\n\n";
+
+    std::cout
+        << "File:           "
+        << filePath
+        << '\n';
+
+    std::cout
+        << "Events checked: "
+        << recording.eventCount()
+        << '\n';
+
+    const ValidationResult result =
+        validateRecording(recording);
+
+    std::cout
+        << "Warnings:       "
+        << result.warningCount()
+        << '\n';
+
+    std::cout
+        << "Errors:         "
+        << result.errorCount()
+        << "\n\n";
+
+    for (const std::string& warning
+         : result.warnings)
+    {
+        std::cout
+            << "WARNING: "
+            << warning
+            << '\n';
+    }
+
+    for (const std::string& error
+         : result.errors)
+    {
+        std::cout
+            << "ERROR: "
+            << error
+            << '\n';
+    }
+
+    if (!result.warnings.empty()
+        || !result.errors.empty())
+    {
+        std::cout << '\n';
+    }
+
+    if (result.valid())
+    {
+        std::cout
+            << "Result: Valid\n";
+
+        return 0;
+    }
+
+    std::cout
+        << "Result: Invalid\n";
+
+    return 7;
 }
 
 int runModelTest()
@@ -934,6 +1019,22 @@ int main(int argc, char* argv[])
 
         return runInfoCommand(argv[2]);
     }
+	
+	if (command == "validate")
+	{
+		if (argc < 3)
+		{
+			std::cerr
+				<< "Missing recording file path\n";
+
+			std::cerr
+				<< "Usage: InputPlay validate <file>\n";
+
+			return 2;
+		}
+
+		return runValidateCommand(argv[2]);
+	}
 
 	if (command == "play")
 	{
