@@ -5,7 +5,9 @@
 #include "MouseRecorder.h"
 #include "Settings.h"
 #include "RecordingValidator.h"
+#include "ExitCodes.h"
 
+#include <limits>
 #include <iomanip>
 #include <chrono>
 #include <iostream>
@@ -18,6 +20,45 @@
 
 namespace
 {
+	
+void printExitCodes()
+{
+    std::cout
+        << "InputPlay exit codes\n\n";
+
+    std::cout
+        << ExitCode::Success
+        << "  Success\n";
+
+    std::cout
+        << ExitCode::GeneralFailure
+        << "  General failure\n";
+
+    std::cout
+        << ExitCode::InvalidArguments
+        << "  Invalid command-line arguments\n";
+
+    std::cout
+        << ExitCode::RecordingLoadFailure
+        << "  Recording load or format failure\n";
+
+    std::cout
+        << ExitCode::Cancelled
+        << "  Operation cancelled\n";
+
+    std::cout
+        << ExitCode::Timeout
+        << "  Operation timed out\n";
+
+    std::cout
+        << ExitCode::DisplayIncompatible
+        << "  Display incompatibility\n";
+
+    std::cout
+        << ExitCode::ValidationFailure
+        << "  Recording validation failure\n";
+}
+
 void printHelp()
 {
     std::cerr
@@ -34,6 +75,7 @@ void printHelp()
     std::cout << "  info <file>\n";
 	std::cout << "  validate <file>\n";
 	std::cout << "  test-model\n";
+	std::cout << "  exit-codes\n";
 }
 
 const char* eventTypeName(EventType type)
@@ -127,7 +169,7 @@ int runRecordCommand(
                   << errorMessage
                   << '\n';
 
-        return 1;
+        return ExitCode::GeneralFailure;
     }
 
     if (!RecordingFile::save(
@@ -139,7 +181,7 @@ int runRecordCommand(
                   << errorMessage
                   << '\n';
 
-        return 1;
+        return ExitCode::GeneralFailure;
     }
 
     std::cout << "Recording saved\n";
@@ -148,7 +190,7 @@ int runRecordCommand(
               << recording.eventCount()
               << '\n';
 
-    return 0;
+    return ExitCode::Success;
 }
 int runInfoCommand(const std::string& filePath)
 {
@@ -165,7 +207,7 @@ int runInfoCommand(const std::string& filePath)
             << errorMessage
             << '\n';
 
-        return 3;
+        return ExitCode::RecordingLoadFailure;
     }
 
     std::size_t mouseMoveCount = 0;
@@ -361,7 +403,7 @@ int runInfoCommand(const std::string& filePath)
         std::cout
             << "\nDisplay compatibility: Unknown\n";
 
-        return 0;
+        return ExitCode::Success;
     }
 
     DisplayMetadata currentDisplay;
@@ -378,7 +420,7 @@ int runInfoCommand(const std::string& filePath)
             << errorMessage
             << '\n';
 
-        return 0;
+        return ExitCode::Success;
     }
 
     std::string compatibilityMessage;
@@ -415,7 +457,7 @@ int runInfoCommand(const std::string& filePath)
         << compatibilityMessage
         << '\n';
 
-    return 0;
+    return ExitCode::Success;
 }
 
 int runValidateCommand(
@@ -434,7 +476,7 @@ int runValidateCommand(
             << errorMessage
             << '\n';
 
-        return 3;
+        return ExitCode::RecordingLoadFailure;
     }
 
     std::cout
@@ -492,13 +534,13 @@ int runValidateCommand(
         std::cout
             << "Result: Valid\n";
 
-        return 0;
+        return ExitCode::Success;
     }
 
     std::cout
         << "Result: Invalid\n";
 
-    return 7;
+    return ExitCode::ValidationFailure;
 }
 
 int runModelTest()
@@ -520,11 +562,11 @@ int runModelTest()
     if (recording.eventCount() != 4)
     {
         std::cerr << "Model test failed\n";
-        return 1;
+        return ExitCode::GeneralFailure;
     }
 
     std::cout << "Model test passed\n";
-    return 0;
+    return ExitCode::Success;
 }
 
 bool isKeyPressed(int virtualKey)
@@ -724,13 +766,13 @@ int runPlayCommand(
             << errorMessage
             << '\n';
 
-        return 3;
+        return ExitCode::RecordingLoadFailure;
     }
 
 	if (recording.empty())
 	{
 		std::cout << "Recording contains no events\n";
-		return 0;
+		return ExitCode::Success;
 	}
 	if (!checkDisplayCompatibility(
         recording,
@@ -743,7 +785,7 @@ int runPlayCommand(
 			<< errorMessage
 			<< '\n';
 
-		return 6;
+		return ExitCode::DisplayIncompatible;
 	}
 
 	if (alignStart
@@ -753,7 +795,7 @@ int runPlayCommand(
 			<< "Recording does not contain a "
 			<< "starting cursor position\n";
 
-		return 1;
+		return ExitCode::GeneralFailure;
 	}
 
 	if (!waitForPlaybackStart(settings))
@@ -763,7 +805,7 @@ int runPlayCommand(
 		std::cout
 			<< "Playback cancelled before start\n";
 
-		return 4;
+		return ExitCode::Cancelled;
 	}
 
 	std::cout
@@ -800,7 +842,7 @@ int runPlayCommand(
 				std::cerr
 					<< "Windows was unable to align the cursor\n";
 
-				return 1;
+				return ExitCode::GeneralFailure;
 			}
 
 			std::cout
@@ -920,7 +962,7 @@ int runPlayCommand(
                     << errorMessage
                     << '\n';
 
-                return 1;
+                return ExitCode::GeneralFailure;
             }
         }
 
@@ -944,11 +986,11 @@ int runPlayCommand(
     if (cancelled)
 	{
 		std::cout << "Playback cancelled\n";
-		return 4;
+		return ExitCode::Cancelled;
 	}
 
     std::cout << "Playback completed\n";
-    return 0;
+    return ExitCode::Success;
 }
 }
 
@@ -968,7 +1010,7 @@ int main(int argc, char* argv[])
 			<< settingsError
 			<< '\n';
 
-		return 1;
+		return ExitCode::GeneralFailure;
 	}
 		
 	
@@ -978,7 +1020,7 @@ int main(int argc, char* argv[])
     {
         std::cout << "InputPlay\n";
         std::cout << "Use --help for commands\n";
-        return 0;
+        return ExitCode::Success;
     }
 
     const std::string command = argv[1];
@@ -986,8 +1028,14 @@ int main(int argc, char* argv[])
     if (command == "--help" || command == "help")
     {
         printHelp();
-        return 0;
+        return ExitCode::Success;
     }
+	
+	if (command == "exit-codes")
+	{
+		printExitCodes();
+		return ExitCode::Success;
+	}
 
     if (command == "test-model")
     {
@@ -1000,7 +1048,7 @@ int main(int argc, char* argv[])
         {
             std::cerr << "Missing recording file path\n";
             std::cerr << "Usage: InputPlay record <file>\n";
-            return 2;
+            return ExitCode::InvalidArguments;
         }
 
         return runRecordCommand(
@@ -1014,7 +1062,7 @@ int main(int argc, char* argv[])
         {
             std::cerr << "Missing recording file path\n";
             std::cerr << "Usage: InputPlay info <file>\n";
-            return 2;
+            return ExitCode::InvalidArguments;
         }
 
         return runInfoCommand(argv[2]);
@@ -1030,7 +1078,7 @@ int main(int argc, char* argv[])
 			std::cerr
 				<< "Usage: InputPlay validate <file>\n";
 
-			return 2;
+			return ExitCode::InvalidArguments;
 		}
 
 		return runValidateCommand(argv[2]);
@@ -1046,7 +1094,7 @@ int main(int argc, char* argv[])
 				<< "[--send-input] [--align-start] "
 				<< "[--loops <number|inf>]\n";
 
-			return 2;
+			return ExitCode::InvalidArguments;
 		}
 
 		bool useSendInput = false;
@@ -1088,7 +1136,7 @@ int main(int argc, char* argv[])
 					std::cerr
 						<< "--loops requires a number or inf\n";
 
-					return 2;
+					return ExitCode::InvalidArguments;
 				}
 
 				const std::string loopValue =
@@ -1102,13 +1150,31 @@ int main(int argc, char* argv[])
 				{
 					try
 					{
+						std::size_t parsedLength = 0;
+
 						const unsigned long parsed =
-							std::stoul(loopValue);
+							std::stoul(
+								loopValue,
+								&parsedLength,
+								10);
+
+						if (parsedLength != loopValue.length())
+						{
+							throw std::invalid_argument(
+								"loop count contains extra characters");
+						}
 
 						if (parsed == 0)
 						{
 							throw std::invalid_argument(
 								"zero loops");
+						}
+
+						if (parsed
+							> std::numeric_limits<unsigned int>::max())
+						{
+							throw std::out_of_range(
+								"loop count is too large");
 						}
 
 						loopCount =
@@ -1121,7 +1187,7 @@ int main(int argc, char* argv[])
 							<< loopValue
 							<< '\n';
 
-						return 2;
+						return ExitCode::InvalidArguments;
 					}
 				}
 			}
@@ -1132,7 +1198,7 @@ int main(int argc, char* argv[])
 					<< option
 					<< '\n';
 
-				return 2;
+				return ExitCode::InvalidArguments;
 			}
 		}
 
@@ -1142,7 +1208,7 @@ int main(int argc, char* argv[])
 				<< "--strict-display and --ignore-display "
 				<< "cannot be used together\n";
 
-			return 2;
+			return ExitCode::InvalidArguments;
 		}
 		if (useSendInput)
 		{
@@ -1179,5 +1245,5 @@ int main(int argc, char* argv[])
               << command
               << '\n';
 
-    return 1;
+    return ExitCode::GeneralFailure;
 }
