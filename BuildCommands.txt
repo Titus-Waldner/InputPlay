@@ -1,3 +1,20 @@
 cd build
 cmake --build .
 ./InputPlay.exe
+
+
+
+GIT:
+cd ~/InputPlay
+git status
+git add .
+git commit -m "Describe what changed"
+git push
+
+
+Remove build files:
+git rm -r --cached build
+
+
+
+
