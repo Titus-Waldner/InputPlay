@@ -1,13 +1,15 @@
 #include "RecordingFile.h"
 
 #include <fstream>
+#include <iomanip>
 #include <string>
 
 namespace
 {
 constexpr const char* FileSignature = "INPUTPLAY";
-constexpr unsigned int CurrentFileVersion = 2;
+constexpr unsigned int CurrentFileVersion = 3;
 constexpr std::size_t MaximumEventCount = 10'000'000;
+constexpr std::size_t MaximumMonitorCount = 64;
 
 int eventTypeToInteger(EventType type)
 {
@@ -50,6 +52,198 @@ bool integerToEventType(int value, EventType& type)
             return false;
     }
 }
+
+bool loadVersionOne(
+    std::ifstream& inputFile,
+    Recording& loadedRecording,
+    std::size_t& eventCount,
+    std::string& errorMessage)
+{
+    inputFile >> eventCount;
+
+    if (!inputFile)
+    {
+        errorMessage =
+            "The recording does not contain a valid event count.";
+
+        return false;
+    }
+
+    return true;
+}
+
+bool loadVersionTwoStartMetadata(
+    std::ifstream& inputFile,
+    Recording& loadedRecording,
+    std::size_t& eventCount,
+    std::string& errorMessage)
+{
+    std::string startCursorLabel;
+    int startX = 0;
+    int startY = 0;
+    int hasStartPosition = 0;
+
+    inputFile
+        >> startCursorLabel
+        >> startX
+        >> startY
+        >> hasStartPosition;
+
+    if (!inputFile || startCursorLabel != "START_CURSOR")
+    {
+        errorMessage =
+            "The recording has invalid start-cursor metadata.";
+
+        return false;
+    }
+
+    if (hasStartPosition != 0)
+    {
+        loadedRecording.setStartingCursorPosition(
+            startX,
+            startY);
+    }
+
+    std::string eventsLabel;
+
+    inputFile >> eventsLabel >> eventCount;
+
+    if (!inputFile || eventsLabel != "EVENTS")
+    {
+        errorMessage =
+            "The recording has an invalid event header.";
+
+        return false;
+    }
+
+    return true;
+}
+
+bool loadVersionThreeMetadata(
+    std::ifstream& inputFile,
+    Recording& loadedRecording,
+    std::size_t& eventCount,
+    std::string& errorMessage)
+{
+    std::string startCursorLabel;
+    int startX = 0;
+    int startY = 0;
+    int hasStartPosition = 0;
+
+    inputFile
+        >> startCursorLabel
+        >> startX
+        >> startY
+        >> hasStartPosition;
+
+    if (!inputFile || startCursorLabel != "START_CURSOR")
+    {
+        errorMessage =
+            "The recording has invalid start-cursor metadata.";
+
+        return false;
+    }
+
+    if (hasStartPosition != 0)
+    {
+        loadedRecording.setStartingCursorPosition(
+            startX,
+            startY);
+    }
+
+    DisplayMetadata displayMetadata;
+    std::string virtualDesktopLabel;
+
+    inputFile
+        >> virtualDesktopLabel
+        >> displayMetadata.virtualDesktopLeft
+        >> displayMetadata.virtualDesktopTop
+        >> displayMetadata.virtualDesktopWidth
+        >> displayMetadata.virtualDesktopHeight;
+
+    if (!inputFile
+        || virtualDesktopLabel != "VIRTUAL_DESKTOP")
+    {
+        errorMessage =
+            "The recording has invalid virtual-desktop metadata.";
+
+        return false;
+    }
+
+    std::string monitorsLabel;
+    std::size_t monitorCount = 0;
+
+    inputFile >> monitorsLabel >> monitorCount;
+
+    if (!inputFile || monitorsLabel != "MONITORS")
+    {
+        errorMessage =
+            "The recording has an invalid monitor header.";
+
+        return false;
+    }
+
+    if (monitorCount > MaximumMonitorCount)
+    {
+        errorMessage =
+            "The recording contains too many monitor records.";
+
+        return false;
+    }
+
+    for (std::size_t index = 0;
+         index < monitorCount;
+         ++index)
+    {
+        std::string monitorLabel;
+        MonitorMetadata monitor;
+        int isPrimary = 0;
+
+        inputFile
+            >> monitorLabel
+            >> std::quoted(monitor.deviceName)
+            >> monitor.left
+            >> monitor.top
+            >> monitor.right
+            >> monitor.bottom
+            >> monitor.workLeft
+            >> monitor.workTop
+            >> monitor.workRight
+            >> monitor.workBottom
+            >> isPrimary;
+
+        if (!inputFile || monitorLabel != "MONITOR")
+        {
+            errorMessage =
+                "The recording contains invalid monitor metadata "
+                "at index "
+                + std::to_string(index)
+                + ".";
+
+            return false;
+        }
+
+        monitor.primary = isPrimary != 0;
+
+        displayMetadata.monitors.push_back(monitor);
+    }
+
+    loadedRecording.setDisplayMetadata(displayMetadata);
+
+    std::string eventsLabel;
+
+    inputFile >> eventsLabel >> eventCount;
+
+    if (!inputFile || eventsLabel != "EVENTS")
+    {
+        errorMessage =
+            "The recording has an invalid event header.";
+
+        return false;
+    }
+
+    return true;
+}
 }
 
 bool RecordingFile::save(
@@ -67,15 +261,66 @@ bool RecordingFile::save(
         return false;
     }
 
-    outputFile << FileSignature << ' '
-               << CurrentFileVersion << '\n';
+    outputFile
+        << FileSignature
+        << ' '
+        << CurrentFileVersion
+        << '\n';
 
     outputFile
         << "START_CURSOR "
-        << recording.startingCursorX() << ' '
-        << recording.startingCursorY() << ' '
+        << recording.startingCursorX()
+        << ' '
+        << recording.startingCursorY()
+        << ' '
         << (recording.hasStartingCursorPosition() ? 1 : 0)
         << '\n';
+
+    const DisplayMetadata& displayMetadata =
+        recording.displayMetadata();
+
+    outputFile
+        << "VIRTUAL_DESKTOP "
+        << displayMetadata.virtualDesktopLeft
+        << ' '
+        << displayMetadata.virtualDesktopTop
+        << ' '
+        << displayMetadata.virtualDesktopWidth
+        << ' '
+        << displayMetadata.virtualDesktopHeight
+        << '\n';
+
+    outputFile
+        << "MONITORS "
+        << displayMetadata.monitors.size()
+        << '\n';
+
+    for (const MonitorMetadata& monitor
+         : displayMetadata.monitors)
+    {
+        outputFile
+            << "MONITOR "
+            << std::quoted(monitor.deviceName)
+            << ' '
+            << monitor.left
+            << ' '
+            << monitor.top
+            << ' '
+            << monitor.right
+            << ' '
+            << monitor.bottom
+            << ' '
+            << monitor.workLeft
+            << ' '
+            << monitor.workTop
+            << ' '
+            << monitor.workRight
+            << ' '
+            << monitor.workBottom
+            << ' '
+            << (monitor.primary ? 1 : 0)
+            << '\n';
+    }
 
     outputFile
         << "EVENTS "
@@ -85,16 +330,26 @@ bool RecordingFile::save(
     for (const InputEvent& event : recording.events())
     {
         outputFile
-            << event.timestampMicroseconds << ' '
-            << eventTypeToInteger(event.type) << ' '
-            << event.mouseX << ' '
-            << event.mouseY << ' '
-            << event.mouseDeltaX << ' '
-            << event.mouseDeltaY << ' '
-            << event.mouseButton << ' '
-            << event.mouseWheelDelta << ' '
-            << event.keyCode << ' '
-            << event.waitMicroseconds << '\n';
+            << event.timestampMicroseconds
+            << ' '
+            << eventTypeToInteger(event.type)
+            << ' '
+            << event.mouseX
+            << ' '
+            << event.mouseY
+            << ' '
+            << event.mouseDeltaX
+            << ' '
+            << event.mouseDeltaY
+            << ' '
+            << event.mouseButton
+            << ' '
+            << event.mouseWheelDelta
+            << ' '
+            << event.keyCode
+            << ' '
+            << event.waitMicroseconds
+            << '\n';
     }
 
     if (!outputFile)
@@ -145,7 +400,7 @@ bool RecordingFile::load(
         return false;
     }
 
-    if (version != 1 && version != 2)
+    if (version < 1 || version > CurrentFileVersion)
     {
         errorMessage =
             "The recording version is not supported.";
@@ -155,57 +410,35 @@ bool RecordingFile::load(
 
     Recording loadedRecording;
     std::size_t eventCount = 0;
+    bool metadataLoaded = false;
 
     if (version == 1)
     {
-        inputFile >> eventCount;
+        metadataLoaded = loadVersionOne(
+            inputFile,
+            loadedRecording,
+            eventCount,
+            errorMessage);
+    }
+    else if (version == 2)
+    {
+        metadataLoaded = loadVersionTwoStartMetadata(
+            inputFile,
+            loadedRecording,
+            eventCount,
+            errorMessage);
     }
     else
     {
-        std::string startCursorLabel;
-        int startX = 0;
-        int startY = 0;
-        int hasStartPosition = 0;
-
-        inputFile
-            >> startCursorLabel
-            >> startX
-            >> startY
-            >> hasStartPosition;
-
-        if (!inputFile || startCursorLabel != "START_CURSOR")
-        {
-            errorMessage =
-                "The recording has invalid start-cursor metadata.";
-
-            return false;
-        }
-
-        if (hasStartPosition != 0)
-        {
-            loadedRecording.setStartingCursorPosition(
-                startX,
-                startY);
-        }
-
-        std::string eventsLabel;
-
-        inputFile >> eventsLabel >> eventCount;
-
-        if (!inputFile || eventsLabel != "EVENTS")
-        {
-            errorMessage =
-                "The recording has an invalid event header.";
-
-            return false;
-        }
+        metadataLoaded = loadVersionThreeMetadata(
+            inputFile,
+            loadedRecording,
+            eventCount,
+            errorMessage);
     }
 
-    if (!inputFile)
+    if (!metadataLoaded)
     {
-        errorMessage =
-            "The recording does not contain a valid event count.";
-
         return false;
     }
 
@@ -217,7 +450,9 @@ bool RecordingFile::load(
         return false;
     }
 
-    for (std::size_t index = 0; index < eventCount; ++index)
+    for (std::size_t index = 0;
+         index < eventCount;
+         ++index)
     {
         InputEvent event;
         int eventTypeValue = 0;
@@ -233,7 +468,7 @@ bool RecordingFile::load(
             >> event.mouseWheelDelta
             >> event.keyCode;
 
-        if (version == 2)
+        if (version >= 2)
         {
             inputFile >> event.waitMicroseconds;
         }
@@ -241,17 +476,21 @@ bool RecordingFile::load(
         if (!inputFile)
         {
             errorMessage =
-                "The recording contains an incomplete event at index "
+                "The recording contains an incomplete event "
+                "at index "
                 + std::to_string(index)
                 + ".";
 
             return false;
         }
 
-        if (!integerToEventType(eventTypeValue, event.type))
+        if (!integerToEventType(
+                eventTypeValue,
+                event.type))
         {
             errorMessage =
-                "The recording contains an unknown event type at index "
+                "The recording contains an unknown event type "
+                "at index "
                 + std::to_string(index)
                 + ".";
 
@@ -262,6 +501,7 @@ bool RecordingFile::load(
     }
 
     recording = loadedRecording;
+
     errorMessage.clear();
     return true;
 }
