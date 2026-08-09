@@ -18,12 +18,17 @@ namespace
 {
 void printHelp()
 {
-    std::cout << "InputPlay\n\n";
+    std::cerr
+			  << "Usage: InputPlay play <file> "
+			  << "[--send-input] [--align-start] "
+			  << "[--loops <number|inf>] "
+			  << "[--strict-display|--ignore-display]\n";
     std::cout << "Commands:\n";
     std::cout << "  record <file>\n";
     std::cout
-			  << " play <file> [--send-input] [--align-start] "
-			  << "[--loops <number|inf>]\n";
+			  << "  play <file> [--send-input] [--align-start] "
+			  << "[--loops <number|inf>] "
+			  << "[--strict-display|--ignore-display]\n";
     std::cout << "  info <file>\n";
     std::cout << "  test-model\n";
 }
@@ -266,10 +271,129 @@ bool waitForPlaybackStart(
         Sleep(1);
     }
 }
+
+bool checkDisplayCompatibility(
+    const Recording& recording,
+    bool strictDisplay,
+    bool ignoreDisplay,
+    std::string& errorMessage)
+{
+    if (ignoreDisplay)
+    {
+        return true;
+    }
+
+    if (!recording.hasDisplayMetadata())
+    {
+        std::cout
+            << "Display compatibility: Unknown\n"
+            << "The recording does not contain display metadata.\n";
+
+        if (strictDisplay)
+        {
+            errorMessage =
+                "Strict display validation requires display metadata.";
+
+            return false;
+        }
+
+        return true;
+    }
+
+    DisplayMetadata currentDisplay;
+    std::string captureError;
+
+    if (!captureDisplayMetadata(
+            currentDisplay,
+            captureError))
+    {
+        errorMessage =
+            "Unable to inspect the current display configuration: "
+            + captureError;
+
+        return false;
+    }
+
+    std::string compatibilityMessage;
+
+    const DisplayCompatibility compatibility =
+        compareDisplayMetadata(
+            recording.displayMetadata(),
+            currentDisplay,
+            compatibilityMessage);
+
+    switch (compatibility)
+    {
+        case DisplayCompatibility::Exact:
+            std::cout
+                << "Display compatibility: Exact\n";
+
+            return true;
+
+        case DisplayCompatibility::CompatibleWithWarnings:
+            std::cout
+                << "Display compatibility warning: "
+                << compatibilityMessage
+                << '\n';
+
+            if (strictDisplay)
+            {
+                errorMessage =
+                    "Strict display validation rejected "
+                    "the current display configuration.";
+
+                return false;
+            }
+
+            return true;
+
+        case DisplayCompatibility::Incompatible:
+            std::cout
+                << "Display compatibility warning: "
+                << compatibilityMessage
+                << '\n';
+
+            if (strictDisplay)
+            {
+                errorMessage =
+                    "The current display configuration is "
+                    "incompatible with the recording.";
+
+                return false;
+            }
+
+            return true;
+
+        case DisplayCompatibility::Unknown:
+            std::cout
+                << "Display compatibility: Unknown\n"
+                << compatibilityMessage
+                << '\n';
+
+            if (strictDisplay)
+            {
+                errorMessage =
+                    "Strict display validation could not "
+                    "determine compatibility.";
+
+                return false;
+            }
+
+            return true;
+    }
+
+    errorMessage =
+        "An unknown display compatibility result occurred.";
+
+    return false;
+}
+
 int runPlayCommand(
     const std::string& filePath,
     IInputBackend& backend,
     bool alignStart,
+    bool strictDisplay,
+    bool ignoreDisplay,
     const Settings& settings,
     unsigned int loopCount,
     bool infiniteLoops)
@@ -294,6 +418,19 @@ int runPlayCommand(
 	{
 		std::cout << "Recording contains no events\n";
 		return 0;
+	}
+	if (!checkDisplayCompatibility(
+        recording,
+        strictDisplay,
+        ignoreDisplay,
+        errorMessage))
+	{
+		std::cerr
+			<< "Display validation failed: "
+			<< errorMessage
+			<< '\n';
+
+		return 6;
 	}
 
 	if (alignStart
@@ -586,6 +723,8 @@ int main(int argc, char* argv[])
 		bool useSendInput = false;
 		bool alignStart = false;
 		bool infiniteLoops = false;
+		bool strictDisplay = false;
+		bool ignoreDisplay = false;
 
 		unsigned int loopCount =
 			settings.defaultLoops;
@@ -604,6 +743,14 @@ int main(int argc, char* argv[])
 			else if (option == "--align-start")
 			{
 				alignStart = true;
+			}
+			else if (option == "--strict-display")
+			{
+				strictDisplay = true;
+			}
+			else if (option == "--ignore-display")
+			{
+				ignoreDisplay = true;
 			}
 			else if (option == "--loops")
 			{
@@ -660,6 +807,14 @@ int main(int argc, char* argv[])
 			}
 		}
 
+		if (strictDisplay && ignoreDisplay)
+		{
+			std::cerr
+				<< "--strict-display and --ignore-display "
+				<< "cannot be used together\n";
+
+			return 2;
+		}
 		if (useSendInput)
 		{
 			std::cout
@@ -671,6 +826,8 @@ int main(int argc, char* argv[])
 				argv[2],
 				backend,
 				alignStart,
+				strictDisplay,
+				ignoreDisplay,
 				settings,
 				loopCount,
 				infiniteLoops);
@@ -682,6 +839,8 @@ int main(int argc, char* argv[])
 			argv[2],
 			backend,
 			alignStart,
+			strictDisplay,
+			ignoreDisplay,
 			settings,
 			loopCount,
 			infiniteLoops);
