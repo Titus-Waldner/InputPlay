@@ -9,7 +9,8 @@ enum class EventType
     MouseButtonUp,
     MouseWheel,
     KeyDown,
-    KeyUp
+    KeyUp,
+    Wait
 };
 
 struct InputEvent
@@ -25,4 +26,6 @@ struct InputEvent
     int mouseWheelDelta = 0;
 
     unsigned int keyCode = 0;
+
+    std::uint64_t waitMicroseconds = 0;
 };

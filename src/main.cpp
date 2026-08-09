@@ -9,6 +9,9 @@
 #include <string>
 #include <thread>
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 namespace
 {
 void printHelp()
@@ -16,7 +19,7 @@ void printHelp()
     std::cout << "InputPlay\n\n";
     std::cout << "Commands:\n";
     std::cout << "  record <file>\n";
-    std::cout << "  play <file>\n";
+    std::cout << " play <file> [--send-input] [--align-start]\n";
     std::cout << "  info <file>\n";
     std::cout << "  test-model\n";
 }
@@ -42,6 +45,9 @@ const char* eventTypeName(EventType type)
 
         case EventType::KeyUp:
             return "KeyUp";
+			
+		case EventType::Wait:
+			return "Wait";
 
         default:
             return "Unknown";
@@ -193,7 +199,8 @@ int runModelTest()
 
 int runPlayCommand(
     const std::string& filePath,
-    IInputBackend& backend)
+    IInputBackend& backend,
+    bool alignStart)
 {
     Recording recording;
     std::string errorMessage;
@@ -216,6 +223,34 @@ int runPlayCommand(
         return 0;
     }
 
+    if (alignStart)
+    {
+        if (!recording.hasStartingCursorPosition())
+        {
+            std::cerr
+                << "Recording does not contain a starting cursor position\n";
+
+            return 1;
+        }
+
+        if (!SetCursorPos(
+                recording.startingCursorX(),
+                recording.startingCursorY()))
+        {
+            std::cerr
+                << "Windows was unable to align the cursor\n";
+
+            return 1;
+        }
+
+        std::cout
+            << "Cursor aligned to "
+            << recording.startingCursorX()
+            << ", "
+            << recording.startingCursorY()
+            << '\n';
+    }
+
     std::cout << "Starting playback\n";
     std::cout << "Events: "
               << recording.eventCount()
@@ -225,14 +260,25 @@ int runPlayCommand(
 
     const Clock::time_point playbackStart = Clock::now();
 
+    std::uint64_t addedWaitMicroseconds = 0;
+
     for (const InputEvent& event : recording.events())
     {
         const Clock::time_point eventDeadline =
             playbackStart
             + std::chrono::microseconds(
-                event.timestampMicroseconds);
+                event.timestampMicroseconds
+                + addedWaitMicroseconds);
 
         std::this_thread::sleep_until(eventDeadline);
+
+        if (event.type == EventType::Wait)
+        {
+            addedWaitMicroseconds +=
+                event.waitMicroseconds;
+
+            continue;
+        }
 
         if (!backend.execute(event, errorMessage))
         {
@@ -305,14 +351,40 @@ int main(int argc, char* argv[])
 		{
 			std::cerr << "Missing recording file path\n";
 			std::cerr
-				<< "Usage: InputPlay play <file> [--send-input]\n";
+				<< "Usage: InputPlay play <file> "
+				<< "[--send-input] [--align-start]\n";
 
 			return 2;
 		}
 
-		const bool useSendInput =
-			argc >= 4
-			&& std::string(argv[3]) == "--send-input";
+		bool useSendInput = false;
+		bool alignStart = false;
+
+		for (int argumentIndex = 3;
+			 argumentIndex < argc;
+			 ++argumentIndex)
+		{
+			const std::string option =
+				argv[argumentIndex];
+
+			if (option == "--send-input")
+			{
+				useSendInput = true;
+			}
+			else if (option == "--align-start")
+			{
+				alignStart = true;
+			}
+			else
+			{
+				std::cerr
+					<< "Unknown playback option: "
+					<< option
+					<< '\n';
+
+				return 2;
+			}
+		}
 
 		if (useSendInput)
 		{
@@ -320,11 +392,19 @@ int main(int argc, char* argv[])
 				<< "WARNING: Live input playback enabled\n";
 
 			SendInputBackend backend;
-			return runPlayCommand(argv[2], backend);
+
+			return runPlayCommand(
+				argv[2],
+				backend,
+				alignStart);
 		}
 
 		DryRunBackend backend;
-		return runPlayCommand(argv[2], backend);
+
+		return runPlayCommand(
+			argv[2],
+			backend,
+			alignStart);
 	}
 
     std::cerr << "Unknown command: "

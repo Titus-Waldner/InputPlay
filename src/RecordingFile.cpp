@@ -1,13 +1,12 @@
 #include "RecordingFile.h"
 
 #include <fstream>
-#include <limits>
 #include <string>
 
 namespace
 {
 constexpr const char* FileSignature = "INPUTPLAY";
-constexpr unsigned int FileVersion = 1;
+constexpr unsigned int CurrentFileVersion = 2;
 constexpr std::size_t MaximumEventCount = 10'000'000;
 
 int eventTypeToInteger(EventType type)
@@ -43,6 +42,10 @@ bool integerToEventType(int value, EventType& type)
             type = EventType::KeyUp;
             return true;
 
+        case 6:
+            type = EventType::Wait;
+            return true;
+
         default:
             return false;
     }
@@ -58,14 +61,26 @@ bool RecordingFile::save(
 
     if (!outputFile)
     {
-        errorMessage = "Unable to open the recording file for writing.";
+        errorMessage =
+            "Unable to open the recording file for writing.";
+
         return false;
     }
 
     outputFile << FileSignature << ' '
-               << FileVersion << '\n';
+               << CurrentFileVersion << '\n';
 
-    outputFile << recording.eventCount() << '\n';
+    outputFile
+        << "START_CURSOR "
+        << recording.startingCursorX() << ' '
+        << recording.startingCursorY() << ' '
+        << (recording.hasStartingCursorPosition() ? 1 : 0)
+        << '\n';
+
+    outputFile
+        << "EVENTS "
+        << recording.eventCount()
+        << '\n';
 
     for (const InputEvent& event : recording.events())
     {
@@ -78,12 +93,15 @@ bool RecordingFile::save(
             << event.mouseDeltaY << ' '
             << event.mouseButton << ' '
             << event.mouseWheelDelta << ' '
-            << event.keyCode << '\n';
+            << event.keyCode << ' '
+            << event.waitMicroseconds << '\n';
     }
 
     if (!outputFile)
     {
-        errorMessage = "An error occurred while writing the recording file.";
+        errorMessage =
+            "An error occurred while writing the recording file.";
+
         return false;
     }
 
@@ -100,7 +118,9 @@ bool RecordingFile::load(
 
     if (!inputFile)
     {
-        errorMessage = "Unable to open the recording file.";
+        errorMessage =
+            "Unable to open the recording file.";
+
         return false;
     }
 
@@ -111,38 +131,91 @@ bool RecordingFile::load(
 
     if (!inputFile)
     {
-        errorMessage = "The recording header is incomplete.";
+        errorMessage =
+            "The recording header is incomplete.";
+
         return false;
     }
 
     if (signature != FileSignature)
     {
-        errorMessage = "The file is not an InputPlay recording.";
+        errorMessage =
+            "The file is not an InputPlay recording.";
+
         return false;
     }
 
-    if (version != FileVersion)
+    if (version != 1 && version != 2)
     {
-        errorMessage = "The recording version is not supported.";
+        errorMessage =
+            "The recording version is not supported.";
+
         return false;
     }
 
+    Recording loadedRecording;
     std::size_t eventCount = 0;
-    inputFile >> eventCount;
+
+    if (version == 1)
+    {
+        inputFile >> eventCount;
+    }
+    else
+    {
+        std::string startCursorLabel;
+        int startX = 0;
+        int startY = 0;
+        int hasStartPosition = 0;
+
+        inputFile
+            >> startCursorLabel
+            >> startX
+            >> startY
+            >> hasStartPosition;
+
+        if (!inputFile || startCursorLabel != "START_CURSOR")
+        {
+            errorMessage =
+                "The recording has invalid start-cursor metadata.";
+
+            return false;
+        }
+
+        if (hasStartPosition != 0)
+        {
+            loadedRecording.setStartingCursorPosition(
+                startX,
+                startY);
+        }
+
+        std::string eventsLabel;
+
+        inputFile >> eventsLabel >> eventCount;
+
+        if (!inputFile || eventsLabel != "EVENTS")
+        {
+            errorMessage =
+                "The recording has an invalid event header.";
+
+            return false;
+        }
+    }
 
     if (!inputFile)
     {
-        errorMessage = "The recording does not contain a valid event count.";
+        errorMessage =
+            "The recording does not contain a valid event count.";
+
         return false;
     }
 
     if (eventCount > MaximumEventCount)
     {
-        errorMessage = "The recording contains too many events.";
+        errorMessage =
+            "The recording contains too many events.";
+
         return false;
     }
-
-    Recording loadedRecording;
 
     for (std::size_t index = 0; index < eventCount; ++index)
     {
@@ -159,6 +232,11 @@ bool RecordingFile::load(
             >> event.mouseButton
             >> event.mouseWheelDelta
             >> event.keyCode;
+
+        if (version == 2)
+        {
+            inputFile >> event.waitMicroseconds;
+        }
 
         if (!inputFile)
         {

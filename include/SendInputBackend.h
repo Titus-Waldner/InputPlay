@@ -10,4 +10,9 @@ public:
         std::string& errorMessage) override;
 
     void releaseAll() override;
+
+private:
+    bool leftButtonHeld_ = false;
+    bool rightButtonHeld_ = false;
+    bool middleButtonHeld_ = false;
 };
