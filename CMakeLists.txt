@@ -12,4 +12,5 @@ add_executable(
     src/main.cpp
     src/Recording.cpp
     src/RecordingFile.cpp
+    src/DryRunBackend.cpp
 )

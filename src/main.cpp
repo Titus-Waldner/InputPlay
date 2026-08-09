@@ -1,5 +1,6 @@
 #include "Recording.h"
 #include "RecordingFile.h"
+#include "DryRunBackend.h"
 
 #include <chrono>
 #include <iostream>
@@ -74,6 +75,14 @@ Recording createSampleRecording()
     leftButtonDown.mouseY = 299;
     leftButtonDown.mouseButton = 1;
     recording.addEvent(leftButtonDown);
+
+	InputEvent leftButtonUp;
+	leftButtonUp.timestampMicroseconds = 70'000;
+	leftButtonUp.type = EventType::MouseButtonUp;
+	leftButtonUp.mouseX = 503;
+	leftButtonUp.mouseY = 299;
+	leftButtonUp.mouseButton = 1;
+	recording.addEvent(leftButtonUp);
 
     return recording;
 }
@@ -162,7 +171,7 @@ int runModelTest()
                   << " microseconds\n";
     }
 
-    if (recording.eventCount() != 3)
+    if (recording.eventCount() != 4)
     {
         std::cerr << "Model test failed\n";
         return 1;
@@ -172,7 +181,9 @@ int runModelTest()
     return 0;
 }
 
-int runPlayCommand(const std::string& filePath)
+int runPlayCommand(
+    const std::string& filePath,
+    IInputBackend& backend)
 {
     Recording recording;
     std::string errorMessage;
@@ -195,7 +206,7 @@ int runPlayCommand(const std::string& filePath)
         return 0;
     }
 
-    std::cout << "Starting dry-run playback\n";
+    std::cout << "Starting playback\n";
     std::cout << "Events: "
               << recording.eventCount()
               << '\n';
@@ -213,15 +224,21 @@ int runPlayCommand(const std::string& filePath)
 
         std::this_thread::sleep_until(eventDeadline);
 
-        std::cout
-            << "Playing "
-            << eventTypeName(event.type)
-            << " at "
-            << event.timestampMicroseconds
-            << " microseconds\n";
+        if (!backend.execute(event, errorMessage))
+        {
+            backend.releaseAll();
+
+            std::cerr << "Playback failed: "
+                      << errorMessage
+                      << '\n';
+
+            return 1;
+        }
     }
 
-    std::cout << "Dry-run playback completed\n";
+    backend.releaseAll();
+
+    std::cout << "Playback completed\n";
     return 0;
 }
 }
@@ -281,7 +298,8 @@ int main(int argc, char* argv[])
 			return 2;
 		}
 
-		return runPlayCommand(argv[2]);
+		DryRunBackend backend;
+		return runPlayCommand(argv[2], backend);
 	}
 
     std::cerr << "Unknown command: "
