@@ -2,6 +2,8 @@
 
 #include "IInputBackend.h"
 
+#include <unordered_set>
+
 class SendInputBackend final : public IInputBackend
 {
 public:
@@ -15,4 +17,6 @@ private:
     bool leftButtonHeld_ = false;
     bool rightButtonHeld_ = false;
     bool middleButtonHeld_ = false;
+
+    std::unordered_set<unsigned int> heldKeys_;
 };

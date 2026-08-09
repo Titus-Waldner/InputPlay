@@ -3,11 +3,13 @@
 #include "DryRunBackend.h"
 #include "SendInputBackend.h"
 #include "MouseRecorder.h"
+#include "Settings.h"
 
 #include <chrono>
 #include <iostream>
 #include <string>
 #include <thread>
+#include <stdexcept>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -19,7 +21,9 @@ void printHelp()
     std::cout << "InputPlay\n\n";
     std::cout << "Commands:\n";
     std::cout << "  record <file>\n";
-    std::cout << " play <file> [--send-input] [--align-start]\n";
+    std::cout
+			  << " play <file> [--send-input] [--align-start] "
+			  << "[--loops <number|inf>]\n";
     std::cout << "  info <file>\n";
     std::cout << "  test-model\n";
 }
@@ -197,10 +201,70 @@ int runModelTest()
     return 0;
 }
 
+bool isKeyPressed(int virtualKey)
+{
+    return
+        (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+}
+
+void waitForKeyRelease(int virtualKey)
+{
+    while (isKeyPressed(virtualKey))
+    {
+        Sleep(1);
+    }
+}
+
+bool waitForPlaybackStart(
+    const Settings& settings)
+{
+    std::cout
+        << "Playback armed\n"
+        << "Press "
+        << keyNameFromVirtualKey(settings.playStartKey)
+        << " to start or "
+        << keyNameFromVirtualKey(settings.playCancelKey)
+        << " to cancel\n";
+
+    bool startWasDown =
+        isKeyPressed(settings.playStartKey);
+
+    bool cancelWasDown =
+        isKeyPressed(settings.playCancelKey);
+
+    while (true)
+    {
+        const bool startIsDown =
+            isKeyPressed(settings.playStartKey);
+
+        const bool cancelIsDown =
+            isKeyPressed(settings.playCancelKey);
+
+        if (cancelIsDown && !cancelWasDown)
+        {
+            waitForKeyRelease(settings.playCancelKey);
+            return false;
+        }
+
+        if (startIsDown && !startWasDown)
+        {
+            waitForKeyRelease(settings.playStartKey);
+            return true;
+        }
+
+        startWasDown = startIsDown;
+        cancelWasDown = cancelIsDown;
+
+        Sleep(1);
+    }
+}
 int runPlayCommand(
     const std::string& filePath,
     IInputBackend& backend,
-    bool alignStart)
+    bool alignStart,
+    const Settings& settings,
+    unsigned int loopCount,
+    bool infiniteLoops)
 {
     Recording recording;
     std::string errorMessage;
@@ -210,89 +274,220 @@ int runPlayCommand(
             recording,
             errorMessage))
     {
-        std::cerr << "Unable to load recording: "
-                  << errorMessage
-                  << '\n';
-
-        return 1;
-    }
-
-    if (recording.empty())
-    {
-        std::cout << "Recording contains no events\n";
-        return 0;
-    }
-
-    if (alignStart)
-    {
-        if (!recording.hasStartingCursorPosition())
-        {
-            std::cerr
-                << "Recording does not contain a starting cursor position\n";
-
-            return 1;
-        }
-
-        if (!SetCursorPos(
-                recording.startingCursorX(),
-                recording.startingCursorY()))
-        {
-            std::cerr
-                << "Windows was unable to align the cursor\n";
-
-            return 1;
-        }
-
-        std::cout
-            << "Cursor aligned to "
-            << recording.startingCursorX()
-            << ", "
-            << recording.startingCursorY()
+        std::cerr
+            << "Unable to load recording: "
+            << errorMessage
             << '\n';
+
+        return 3;
     }
 
-    std::cout << "Starting playback\n";
-    std::cout << "Events: "
-              << recording.eventCount()
-              << '\n';
+	if (recording.empty())
+	{
+		std::cout << "Recording contains no events\n";
+		return 0;
+	}
+
+	if (alignStart
+		&& !recording.hasStartingCursorPosition())
+	{
+		std::cerr
+			<< "Recording does not contain a "
+			<< "starting cursor position\n";
+
+		return 1;
+	}
+
+	if (!waitForPlaybackStart(settings))
+	{
+		backend.releaseAll();
+
+		std::cout
+			<< "Playback cancelled before start\n";
+
+		return 4;
+	}
+
+	std::cout
+		<< "Playback controls: "
+        << keyNameFromVirtualKey(settings.playPauseKey)
+        << " pauses/resumes, "
+        << keyNameFromVirtualKey(settings.playCancelKey)
+        << " cancels\n";
+
+    if (infiniteLoops)
+    {
+        std::cout << "Loops: infinite\n";
+    }
+    else
+    {
+        std::cout << "Loops: " << loopCount << '\n';
+    }
 
     using Clock = std::chrono::steady_clock;
 
-    const Clock::time_point playbackStart = Clock::now();
+    unsigned int completedLoops = 0;
+    bool cancelled = false;
 
-    std::uint64_t addedWaitMicroseconds = 0;
+    while (infiniteLoops || completedLoops < loopCount)
+	{
+		if (alignStart)
+		{
+			if (!SetCursorPos(
+					recording.startingCursorX(),
+					recording.startingCursorY()))
+			{
+				backend.releaseAll();
 
-    for (const InputEvent& event : recording.events())
-    {
-        const Clock::time_point eventDeadline =
-            playbackStart
-            + std::chrono::microseconds(
-                event.timestampMicroseconds
-                + addedWaitMicroseconds);
+				std::cerr
+					<< "Windows was unable to align the cursor\n";
 
-        std::this_thread::sleep_until(eventDeadline);
+				return 1;
+			}
 
-        if (event.type == EventType::Wait)
+			std::cout
+				<< "Cursor aligned to "
+				<< recording.startingCursorX()
+				<< ", "
+				<< recording.startingCursorY()
+				<< '\n';
+		}
+
+		std::cout
+			<< "Starting loop "
+			<< completedLoops + 1
+			<< '\n';
+
+        const Clock::time_point playbackStart =
+            Clock::now();
+
+        std::chrono::microseconds pausedDuration{0};
+        std::uint64_t addedWaitMicroseconds = 0;
+
+        bool paused = false;
+
+		bool pauseKeyWasDown =
+			isKeyPressed(settings.playPauseKey);
+
+		bool cancelKeyWasDown =
+			isKeyPressed(settings.playCancelKey);
+
+        for (const InputEvent& event : recording.events())
         {
-            addedWaitMicroseconds +=
-                event.waitMicroseconds;
+            const auto eventOffset =
+                std::chrono::microseconds(
+                    event.timestampMicroseconds
+                    + addedWaitMicroseconds);
 
-            continue;
+            while (true)
+            {
+    
+				const bool cancelKeyIsDown =
+				isKeyPressed(settings.playCancelKey);
+
+				if (cancelKeyIsDown && !cancelKeyWasDown)
+				{
+					cancelled = true;
+					break;
+				}
+
+				cancelKeyWasDown = cancelKeyIsDown;
+
+				const bool pauseKeyIsDown =
+					isKeyPressed(settings.playPauseKey);
+
+				if (pauseKeyIsDown && !pauseKeyWasDown)
+				{
+					paused = !paused;
+
+					if (paused)
+					{
+						std::cout << "Playback paused\n";
+					}
+					else
+					{
+						std::cout << "Playback resumed\n";
+					}
+				}
+
+				pauseKeyWasDown = pauseKeyIsDown;
+
+                if (paused)
+                {
+                    const Clock::time_point pauseTick =
+                        Clock::now();
+
+                    Sleep(1);
+
+                    pausedDuration +=
+                        std::chrono::duration_cast<
+                            std::chrono::microseconds>(
+                            Clock::now() - pauseTick);
+
+                    continue;
+                }
+
+                const Clock::time_point deadline =
+                    playbackStart
+                    + eventOffset
+                    + pausedDuration;
+
+                if (Clock::now() >= deadline)
+                {
+                    break;
+                }
+
+                Sleep(1);
+            }
+
+            if (cancelled)
+            {
+                break;
+            }
+
+            if (event.type == EventType::Wait)
+            {
+                addedWaitMicroseconds +=
+                    event.waitMicroseconds;
+
+                continue;
+            }
+
+            if (!backend.execute(event, errorMessage))
+            {
+                backend.releaseAll();
+
+                std::cerr
+                    << "Playback failed: "
+                    << errorMessage
+                    << '\n';
+
+                return 1;
+            }
         }
 
-        if (!backend.execute(event, errorMessage))
+        backend.releaseAll();
+
+        if (cancelled)
         {
-            backend.releaseAll();
-
-            std::cerr << "Playback failed: "
-                      << errorMessage
-                      << '\n';
-
-            return 1;
+            break;
         }
+
+        ++completedLoops;
+
+        std::cout
+            << "Completed loop "
+            << completedLoops
+            << '\n';
     }
 
     backend.releaseAll();
+
+    if (cancelled)
+	{
+		std::cout << "Playback cancelled\n";
+		return 4;
+	}
 
     std::cout << "Playback completed\n";
     return 0;
@@ -301,6 +496,26 @@ int runPlayCommand(
 
 int main(int argc, char* argv[])
 {
+    Settings settings;
+	std::string settingsPath;
+	std::string settingsError;
+
+	if (!loadOrCreateSettings(
+			settings,
+			settingsPath,
+			settingsError))
+	{
+		std::cerr
+			<< "Unable to load settings: "
+			<< settingsError
+			<< '\n';
+
+		return 1;
+	}
+		
+	
+	
+	
     if (argc < 2)
     {
         std::cout << "InputPlay\n";
@@ -352,13 +567,18 @@ int main(int argc, char* argv[])
 			std::cerr << "Missing recording file path\n";
 			std::cerr
 				<< "Usage: InputPlay play <file> "
-				<< "[--send-input] [--align-start]\n";
+				<< "[--send-input] [--align-start] "
+				<< "[--loops <number|inf>]\n";
 
 			return 2;
 		}
 
 		bool useSendInput = false;
 		bool alignStart = false;
+		bool infiniteLoops = false;
+
+		unsigned int loopCount =
+			settings.defaultLoops;
 
 		for (int argumentIndex = 3;
 			 argumentIndex < argc;
@@ -374,6 +594,50 @@ int main(int argc, char* argv[])
 			else if (option == "--align-start")
 			{
 				alignStart = true;
+			}
+			else if (option == "--loops")
+			{
+				if (argumentIndex + 1 >= argc)
+				{
+					std::cerr
+						<< "--loops requires a number or inf\n";
+
+					return 2;
+				}
+
+				const std::string loopValue =
+					argv[++argumentIndex];
+
+				if (loopValue == "inf")
+				{
+					infiniteLoops = true;
+				}
+				else
+				{
+					try
+					{
+						const unsigned long parsed =
+							std::stoul(loopValue);
+
+						if (parsed == 0)
+						{
+							throw std::invalid_argument(
+								"zero loops");
+						}
+
+						loopCount =
+							static_cast<unsigned int>(parsed);
+					}
+					catch (...)
+					{
+						std::cerr
+							<< "Invalid loop count: "
+							<< loopValue
+							<< '\n';
+
+						return 2;
+					}
+				}
 			}
 			else
 			{
@@ -396,7 +660,10 @@ int main(int argc, char* argv[])
 			return runPlayCommand(
 				argv[2],
 				backend,
-				alignStart);
+				alignStart,
+				settings,
+				loopCount,
+				infiniteLoops);
 		}
 
 		DryRunBackend backend;
@@ -404,7 +671,10 @@ int main(int argc, char* argv[])
 		return runPlayCommand(
 			argv[2],
 			backend,
-			alignStart);
+			alignStart,
+			settings,
+			loopCount,
+			infiniteLoops);
 	}
 
     std::cerr << "Unknown command: "

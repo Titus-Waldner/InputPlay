@@ -15,5 +15,6 @@ add_executable(
     src/DryRunBackend.cpp
     src/SendInputBackend.cpp
     src/MouseRecorder.cpp
-	src/DisplayMetadata.cpp
+    src/DisplayMetadata.cpp
+    src/Settings.cpp
 )

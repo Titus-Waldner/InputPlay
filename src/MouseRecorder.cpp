@@ -150,6 +150,53 @@ void processRawMouseInput(const RAWMOUSE& mouse)
     }
 }
 
+
+void processRawKeyboardInput(const RAWKEYBOARD& keyboard)
+{
+    if (activeRecording == nullptr)
+    {
+        return;
+    }
+
+    // F12 is reserved for stopping the recording.
+    if (keyboard.VKey == VK_F12)
+    {
+        return;
+    }
+
+    const bool keyReleased =
+        (keyboard.Flags & RI_KEY_BREAK) != 0;
+
+    const bool extendedKey =
+        (keyboard.Flags & RI_KEY_E0) != 0;
+
+    unsigned int packedScanCode =
+        static_cast<unsigned int>(keyboard.MakeCode);
+
+    if (extendedKey)
+    {
+        packedScanCode |= 0x100;
+    }
+
+    InputEvent event;
+    event.timestampMicroseconds =
+        currentTimestampMicroseconds();
+
+    event.type =
+        keyReleased
+        ? EventType::KeyUp
+        : EventType::KeyDown;
+
+    event.keyCode = packedScanCode;
+
+    activeRecording->addEvent(event);
+}
+
+
+
+
+
+
 LRESULT CALLBACK recorderWindowProcedure(
     HWND window,
     UINT message,
@@ -195,10 +242,15 @@ LRESULT CALLBACK recorderWindowProcedure(
             reinterpret_cast<const RAWINPUT*>(buffer);
 
         if (rawInput->header.dwType == RIM_TYPEMOUSE)
-        {
-            processRawMouseInput(
-                rawInput->data.mouse);
-        }
+		{
+			processRawMouseInput(
+				rawInput->data.mouse);
+		}
+		else if (rawInput->header.dwType == RIM_TYPEKEYBOARD)
+		{
+			processRawKeyboardInput(
+				rawInput->data.keyboard);
+		}
 
         return 0;
     }
@@ -261,24 +313,30 @@ bool MouseRecorder::record(
         return false;
     }
 
-    RAWINPUTDEVICE mouseDevice{};
-    mouseDevice.usUsagePage = 0x01;
-    mouseDevice.usUsage = 0x02;
-    mouseDevice.dwFlags = RIDEV_INPUTSINK;
-    mouseDevice.hwndTarget = window;
+    RAWINPUTDEVICE inputDevices[2]{};
 
-    if (!RegisterRawInputDevices(
-            &mouseDevice,
-            1,
-            sizeof(mouseDevice)))
-    {
-        DestroyWindow(window);
+	inputDevices[0].usUsagePage = 0x01;
+	inputDevices[0].usUsage = 0x02;
+	inputDevices[0].dwFlags = RIDEV_INPUTSINK;
+	inputDevices[0].hwndTarget = window;
 
-        errorMessage =
-            "Unable to register for raw mouse input.";
+	inputDevices[1].usUsagePage = 0x01;
+	inputDevices[1].usUsage = 0x06;
+	inputDevices[1].dwFlags = RIDEV_INPUTSINK;
+	inputDevices[1].hwndTarget = window;
 
-        return false;
-    }
+	if (!RegisterRawInputDevices(
+			inputDevices,
+			2,
+			sizeof(RAWINPUTDEVICE)))
+	{
+		DestroyWindow(window);
+
+		errorMessage =
+			"Unable to register for raw mouse and keyboard input.";
+
+		return false;
+	}
 
     recording.clear();
 
@@ -315,8 +373,8 @@ bool MouseRecorder::record(
 	activeRecording = &recording;
 	recordingStart = std::chrono::steady_clock::now();
 
-    std::cout << "Recording mouse input\n";
-    std::cout << "Movement, buttons, and wheel are enabled\n";
+    std::cout << "Recording mouse and keyboard input\n";
+	std::cout << "Mouse movement, buttons, wheel, and keyboard are enabled\n";
     std::cout << "Press F12 to stop recording\n";
 
     MSG message{};

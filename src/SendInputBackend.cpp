@@ -41,6 +41,50 @@ bool sendMouseInput(
     errorMessage.clear();
     return true;
 }
+bool sendKeyboardInput(
+    unsigned int packedScanCode,
+    bool keyReleased,
+    std::string& errorMessage)
+{
+    const bool extendedKey =
+        (packedScanCode & 0x100) != 0;
+
+    const WORD scanCode =
+        static_cast<WORD>(
+            packedScanCode & 0xFF);
+
+    INPUT input{};
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = 0;
+    input.ki.wScan = scanCode;
+    input.ki.dwFlags = KEYEVENTF_SCANCODE;
+
+    if (extendedKey)
+    {
+        input.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+    }
+
+    if (keyReleased)
+    {
+        input.ki.dwFlags |= KEYEVENTF_KEYUP;
+    }
+
+    const UINT sentCount = SendInput(
+        1,
+        &input,
+        sizeof(INPUT));
+
+    if (sentCount != 1)
+    {
+        errorMessage =
+            "Windows was unable to send the keyboard input.";
+
+        return false;
+    }
+
+    errorMessage.clear();
+    return true;
+}
 }
 
 bool SendInputBackend::execute(
@@ -146,11 +190,34 @@ bool SendInputBackend::execute(
                 errorMessage);
 
         case EventType::KeyDown:
-        case EventType::KeyUp:
-            errorMessage =
-                "Live keyboard playback is not implemented yet.";
+			if (!sendKeyboardInput(
+					event.keyCode,
+					false,
+					errorMessage))
+			{
+				return false;
+			}
 
-            return false;
+			heldKeys_.insert(event.keyCode);
+			return true;
+
+		case EventType::KeyUp:
+			if (!sendKeyboardInput(
+					event.keyCode,
+					true,
+					errorMessage))
+			{
+				return false;
+			}
+
+			heldKeys_.erase(event.keyCode);
+			return true;
+
+		case EventType::Wait:
+			errorMessage =
+				"Wait events must be handled by the playback scheduler.";
+
+			return false;
 
         default:
             errorMessage =
@@ -199,4 +266,14 @@ void SendInputBackend::releaseAll()
 
         middleButtonHeld_ = false;
     }
+	
+	for (const unsigned int keyCode : heldKeys_)
+	{
+		sendKeyboardInput(
+			keyCode,
+			true,
+			ignoredError);
+	}
+
+	heldKeys_.clear();
 }
