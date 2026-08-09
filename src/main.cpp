@@ -1,6 +1,8 @@
 #include "Recording.h"
 #include "RecordingFile.h"
 #include "DryRunBackend.h"
+#include "SendInputBackend.h"
+#include "MouseRecorder.h"
 
 #include <chrono>
 #include <iostream>
@@ -89,9 +91,18 @@ Recording createSampleRecording()
 
 int runRecordCommand(const std::string& filePath)
 {
-    const Recording recording = createSampleRecording();
-
+    Recording recording;
+    MouseRecorder recorder;
     std::string errorMessage;
+
+    if (!recorder.record(recording, errorMessage))
+    {
+        std::cerr << "Recording failed: "
+                  << errorMessage
+                  << '\n';
+
+        return 1;
+    }
 
     if (!RecordingFile::save(
             recording,
@@ -105,7 +116,7 @@ int runRecordCommand(const std::string& filePath)
         return 1;
     }
 
-    std::cout << "Sample recording saved\n";
+    std::cout << "Recording saved\n";
     std::cout << "File: " << filePath << '\n';
     std::cout << "Events: "
               << recording.eventCount()
@@ -113,7 +124,6 @@ int runRecordCommand(const std::string& filePath)
 
     return 0;
 }
-
 int runInfoCommand(const std::string& filePath)
 {
     Recording recording;
@@ -294,8 +304,23 @@ int main(int argc, char* argv[])
 		if (argc < 3)
 		{
 			std::cerr << "Missing recording file path\n";
-			std::cerr << "Usage: InputPlay play <file>\n";
+			std::cerr
+				<< "Usage: InputPlay play <file> [--send-input]\n";
+
 			return 2;
+		}
+
+		const bool useSendInput =
+			argc >= 4
+			&& std::string(argv[3]) == "--send-input";
+
+		if (useSendInput)
+		{
+			std::cout
+				<< "WARNING: Live input playback enabled\n";
+
+			SendInputBackend backend;
+			return runPlayCommand(argv[2], backend);
 		}
 
 		DryRunBackend backend;

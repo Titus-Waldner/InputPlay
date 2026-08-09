@@ -13,4 +13,6 @@ add_executable(
     src/Recording.cpp
     src/RecordingFile.cpp
     src/DryRunBackend.cpp
+    src/SendInputBackend.cpp
+    src/MouseRecorder.cpp
 )
