@@ -5,6 +5,7 @@
 #include "MouseRecorder.h"
 #include "Settings.h"
 
+#include <iomanip>
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -157,33 +158,260 @@ int runInfoCommand(const std::string& filePath)
             recording,
             errorMessage))
     {
-        std::cerr << "Unable to load recording: "
-                  << errorMessage
-                  << '\n';
+        std::cerr
+            << "Unable to load recording: "
+            << errorMessage
+            << '\n';
 
-        return 1;
+        return 3;
     }
 
-    std::cout << "InputPlay recording information\n";
-    std::cout << "File: " << filePath << '\n';
-    std::cout << "Events: "
-              << recording.eventCount()
-              << '\n';
+    std::size_t mouseMoveCount = 0;
+    std::size_t mouseTeleportCount = 0;
+    std::size_t mouseButtonCount = 0;
+    std::size_t mouseWheelCount = 0;
+    std::size_t keyboardCount = 0;
+    std::size_t waitCount = 0;
 
-    std::size_t eventNumber = 1;
+    std::uint64_t durationMicroseconds = 0;
+    std::uint64_t explicitWaitMicroseconds = 0;
 
     for (const InputEvent& event : recording.events())
     {
-        std::cout
-            << eventNumber
-            << ": "
-            << eventTypeName(event.type)
-            << " at "
-            << event.timestampMicroseconds
-            << " microseconds\n";
+        if (event.timestampMicroseconds
+            > durationMicroseconds)
+        {
+            durationMicroseconds =
+                event.timestampMicroseconds;
+        }
 
-        ++eventNumber;
+        switch (event.type)
+        {
+            case EventType::MouseMove:
+                ++mouseMoveCount;
+                break;
+
+            case EventType::MouseTeleport:
+                ++mouseTeleportCount;
+                break;
+
+            case EventType::MouseButtonDown:
+            case EventType::MouseButtonUp:
+                ++mouseButtonCount;
+                break;
+
+            case EventType::MouseWheel:
+                ++mouseWheelCount;
+                break;
+
+            case EventType::KeyDown:
+            case EventType::KeyUp:
+                ++keyboardCount;
+                break;
+
+            case EventType::Wait:
+                ++waitCount;
+
+                explicitWaitMicroseconds +=
+                    event.waitMicroseconds;
+
+                break;
+        }
     }
+
+    const double durationSeconds =
+        static_cast<double>(
+            durationMicroseconds
+            + explicitWaitMicroseconds)
+        / 1'000'000.0;
+
+    std::cout
+        << "InputPlay recording information\n\n";
+
+    std::cout
+        << "File:                  "
+        << filePath
+        << '\n';
+
+    std::cout
+        << "Events:                "
+        << recording.eventCount()
+        << '\n';
+
+    std::cout
+        << "Duration:              "
+        << std::fixed
+        << std::setprecision(3)
+        << durationSeconds
+        << " seconds\n";
+
+    if (recording.hasStartingCursorPosition())
+    {
+        std::cout
+            << "Starting cursor:       "
+            << recording.startingCursorX()
+            << ", "
+            << recording.startingCursorY()
+            << '\n';
+    }
+    else
+    {
+        std::cout
+            << "Starting cursor:       Unknown\n";
+    }
+
+    if (recording.hasDisplayMetadata())
+    {
+        const DisplayMetadata& display =
+            recording.displayMetadata();
+
+        std::cout
+            << "Monitor count:         "
+            << display.monitors.size()
+            << '\n';
+
+        std::cout
+            << "Virtual desktop:       "
+            << display.virtualDesktopLeft
+            << ","
+            << display.virtualDesktopTop
+            << " "
+            << display.virtualDesktopWidth
+            << "x"
+            << display.virtualDesktopHeight
+            << '\n';
+
+        for (std::size_t index = 0;
+             index < display.monitors.size();
+             ++index)
+        {
+            const MonitorMetadata& monitor =
+                display.monitors[index];
+
+            const int monitorWidth =
+                monitor.right - monitor.left;
+
+            const int monitorHeight =
+                monitor.bottom - monitor.top;
+
+            std::cout
+                << "Monitor "
+                << index + 1
+                << ":             "
+                << monitor.deviceName
+                << " at "
+                << monitor.left
+                << ","
+                << monitor.top
+                << " "
+                << monitorWidth
+                << "x"
+                << monitorHeight;
+
+            if (monitor.primary)
+            {
+                std::cout << " (primary)";
+            }
+
+            std::cout << '\n';
+        }
+    }
+    else
+    {
+        std::cout
+            << "Display metadata:      Not available\n";
+    }
+
+    std::cout << '\n';
+
+    std::cout
+        << "Mouse movements:       "
+        << mouseMoveCount
+        << '\n';
+
+    std::cout
+        << "Mouse teleports:       "
+        << mouseTeleportCount
+        << '\n';
+
+    std::cout
+        << "Mouse button events:   "
+        << mouseButtonCount
+        << '\n';
+
+    std::cout
+        << "Mouse wheel events:    "
+        << mouseWheelCount
+        << '\n';
+
+    std::cout
+        << "Keyboard events:       "
+        << keyboardCount
+        << '\n';
+
+    std::cout
+        << "Wait events:           "
+        << waitCount
+        << '\n';
+
+    if (!recording.hasDisplayMetadata())
+    {
+        std::cout
+            << "\nDisplay compatibility: Unknown\n";
+
+        return 0;
+    }
+
+    DisplayMetadata currentDisplay;
+
+    if (!captureDisplayMetadata(
+            currentDisplay,
+            errorMessage))
+    {
+        std::cout
+            << "\nDisplay compatibility: Unable to check\n";
+
+        std::cout
+            << "Reason: "
+            << errorMessage
+            << '\n';
+
+        return 0;
+    }
+
+    std::string compatibilityMessage;
+
+    const DisplayCompatibility compatibility =
+        compareDisplayMetadata(
+            recording.displayMetadata(),
+            currentDisplay,
+            compatibilityMessage);
+
+    std::cout << "\nDisplay compatibility: ";
+
+    switch (compatibility)
+    {
+        case DisplayCompatibility::Exact:
+            std::cout << "Exact\n";
+            break;
+
+        case DisplayCompatibility::CompatibleWithWarnings:
+            std::cout << "Compatible with warnings\n";
+            break;
+
+        case DisplayCompatibility::Incompatible:
+            std::cout << "Incompatible\n";
+            break;
+
+        case DisplayCompatibility::Unknown:
+            std::cout << "Unknown\n";
+            break;
+    }
+
+    std::cout
+        << "Compatibility details: "
+        << compatibilityMessage
+        << '\n';
 
     return 0;
 }
