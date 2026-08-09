@@ -18,4 +18,5 @@ add_executable(
     src/DisplayMetadata.cpp
     src/Settings.cpp
 	src/RecordingValidator.cpp
+	src/CancellationSession.cpp
 )

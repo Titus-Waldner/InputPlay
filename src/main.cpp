@@ -6,6 +6,7 @@
 #include "Settings.h"
 #include "RecordingValidator.h"
 #include "ExitCodes.h"
+#include "CancellationSession.h"
 
 #include <limits>
 #include <iomanip>
@@ -61,21 +62,21 @@ void printExitCodes()
 
 void printHelp()
 {
-    std::cerr
-			  << "Usage: InputPlay play <file> "
-			  << "[--send-input] [--align-start] "
-			  << "[--loops <number|inf>] "
-			  << "[--strict-display|--ignore-display]\n";
+    std::cout << "InputPlay\n\n";
     std::cout << "Commands:\n";
     std::cout << "  record <file>\n";
+
     std::cout
-			  << "  play <file> [--send-input] [--align-start] "
-			  << "[--loops <number|inf>] "
-			  << "[--strict-display|--ignore-display]\n";
+				<< "  play <file> [--send-input] [--align-start] "
+				<< "[--start-immediately] [--loops <number|inf>] "
+				<< "[--session <name>] [--timeout <seconds>] "
+				<< "[--strict-display|--ignore-display]\n";
+
+    std::cout << "  cancel <session>\n";
     std::cout << "  info <file>\n";
-	std::cout << "  validate <file>\n";
-	std::cout << "  test-model\n";
-	std::cout << "  exit-codes\n";
+    std::cout << "  validate <file>\n";
+    std::cout << "  test-model\n";
+    std::cout << "  exit-codes\n";
 }
 
 const char* eventTypeName(EventType type)
@@ -584,7 +585,8 @@ void waitForKeyRelease(int virtualKey)
 }
 
 bool waitForPlaybackStart(
-    const Settings& settings)
+    const Settings& settings,
+    const CancellationSession* cancellationSession)
 {
     std::cout
         << "Playback armed\n"
@@ -601,12 +603,18 @@ bool waitForPlaybackStart(
         isKeyPressed(settings.playCancelKey);
 
     while (true)
-    {
-        const bool startIsDown =
-            isKeyPressed(settings.playStartKey);
+	{
+		if (cancellationSession != nullptr
+			&& cancellationSession->isCancellationRequested())
+		{
+			return false;
+		}
 
-        const bool cancelIsDown =
-            isKeyPressed(settings.playCancelKey);
+		const bool startIsDown =
+			isKeyPressed(settings.playStartKey);
+
+		const bool cancelIsDown =
+			isKeyPressed(settings.playCancelKey);
 
         if (cancelIsDown && !cancelWasDown)
         {
@@ -743,18 +751,68 @@ bool checkDisplayCompatibility(
     return false;
 }
 
+int runCancelCommand(
+    const std::string& sessionName)
+{
+    std::string errorMessage;
+
+    if (!CancellationSession::requestCancellation(
+            sessionName,
+            errorMessage))
+    {
+        std::cerr
+            << "Unable to cancel session: "
+            << errorMessage
+            << '\n';
+
+        return ExitCode::GeneralFailure;
+    }
+
+    std::cout
+        << "Cancellation requested for session: "
+        << sessionName
+        << '\n';
+
+    return ExitCode::Success;
+}
+
 int runPlayCommand(
     const std::string& filePath,
     IInputBackend& backend,
     bool alignStart,
     bool strictDisplay,
     bool ignoreDisplay,
+    bool startImmediately,
     const Settings& settings,
     unsigned int loopCount,
-    bool infiniteLoops)
+    bool infiniteLoops,
+    const std::string& sessionName,
+    bool timeoutEnabled,
+    unsigned int timeoutSeconds)
 {
     Recording recording;
     std::string errorMessage;
+	CancellationSession cancellationSession;
+
+	if (!sessionName.empty())
+	{
+		if (!cancellationSession.create(
+				sessionName,
+				errorMessage))
+		{
+			std::cerr
+				<< "Unable to create playback session: "
+				<< errorMessage
+				<< '\n';
+
+			return ExitCode::GeneralFailure;
+		}
+
+		std::cout
+			<< "Playback session: "
+			<< sessionName
+			<< '\n';
+	}
 
     if (!RecordingFile::load(
             filePath,
@@ -798,14 +856,29 @@ int runPlayCommand(
 		return ExitCode::GeneralFailure;
 	}
 
-	if (!waitForPlaybackStart(settings))
+	const CancellationSession* sessionPointer =
+		sessionName.empty()
+		? nullptr
+		: &cancellationSession;
+
+	if (!startImmediately)
 	{
-		backend.releaseAll();
+		if (!waitForPlaybackStart(
+				settings,
+				sessionPointer))
+		{
+			backend.releaseAll();
 
+			std::cout
+				<< "Playback cancelled before start\n";
+
+			return ExitCode::Cancelled;
+		}
+	}
+	else
+	{
 		std::cout
-			<< "Playback cancelled before start\n";
-
-		return ExitCode::Cancelled;
+			<< "Playback starting immediately\n";
 	}
 
 	std::cout
@@ -826,11 +899,44 @@ int runPlayCommand(
 
     using Clock = std::chrono::steady_clock;
 
+	const Clock::time_point operationStart =
+    Clock::now();
+
+	Clock::time_point timeoutDeadline =
+		Clock::time_point::max();
+
+	if (timeoutEnabled)
+	{
+		timeoutDeadline =
+			operationStart
+			+ std::chrono::seconds(timeoutSeconds);
+
+		std::cout
+			<< "Timeout: "
+			<< timeoutSeconds
+			<< " seconds\n";
+	}
+
     unsigned int completedLoops = 0;
     bool cancelled = false;
+	bool timedOut = false;
 
     while (infiniteLoops || completedLoops < loopCount)
 	{
+		if (timeoutEnabled
+			&& Clock::now() >= timeoutDeadline)
+		{
+			timedOut = true;
+			break;
+		}
+
+		if (sessionPointer != nullptr
+			&& sessionPointer->isCancellationRequested())
+		{
+			cancelled = true;
+			break;
+		}
+
 		if (alignStart)
 		{
 			if (!SetCursorPos(
@@ -880,10 +986,23 @@ int runPlayCommand(
                     + addedWaitMicroseconds);
 
             while (true)
-            {
-    
+			{
+				if (timeoutEnabled
+					&& Clock::now() >= timeoutDeadline)
+				{
+					timedOut = true;
+					break;
+				}
+
+				if (sessionPointer != nullptr
+					&& sessionPointer->isCancellationRequested())
+				{
+					cancelled = true;
+					break;
+				}
+
 				const bool cancelKeyIsDown =
-				isKeyPressed(settings.playCancelKey);
+					isKeyPressed(settings.playCancelKey);
 
 				if (cancelKeyIsDown && !cancelKeyWasDown)
 				{
@@ -940,10 +1059,10 @@ int runPlayCommand(
                 Sleep(1);
             }
 
-            if (cancelled)
-            {
-                break;
-            }
+            if (cancelled || timedOut)
+			{
+				break;
+			}
 
             if (event.type == EventType::Wait)
             {
@@ -968,10 +1087,10 @@ int runPlayCommand(
 
         backend.releaseAll();
 
-        if (cancelled)
-        {
-            break;
-        }
+        if (cancelled || timedOut)
+		{
+			break;
+		}
 
         ++completedLoops;
 
@@ -983,14 +1102,21 @@ int runPlayCommand(
 
     backend.releaseAll();
 
-    if (cancelled)
+    if (timedOut)
+	{
+		std::cout << "Playback timed out\n";
+		return ExitCode::Timeout;
+	}
+
+	if (cancelled)
 	{
 		std::cout << "Playback cancelled\n";
 		return ExitCode::Cancelled;
 	}
 
-    std::cout << "Playback completed\n";
-    return ExitCode::Success;
+	std::cout << "Playback completed\n";
+	return ExitCode::Success;
+
 }
 }
 
@@ -1083,17 +1209,33 @@ int main(int argc, char* argv[])
 
 		return runValidateCommand(argv[2]);
 	}
+	
+	if (command == "cancel")
+	{
+		if (argc < 3)
+		{
+			std::cerr
+				<< "Missing playback session name\n";
+
+			std::cerr
+				<< "Usage: InputPlay cancel <session>\n";
+
+			return ExitCode::InvalidArguments;
+		}
+
+		return runCancelCommand(argv[2]);
+	}
 
 	if (command == "play")
 	{
 		if (argc < 3)
 		{
-			std::cerr << "Missing recording file path\n";
 			std::cerr
 				<< "Usage: InputPlay play <file> "
 				<< "[--send-input] [--align-start] "
-				<< "[--loops <number|inf>]\n";
-
+				<< "[--start-immediately] [--loops <number|inf>] "
+				<< "[--session <name>] [--timeout <seconds>] "
+				<< "[--strict-display|--ignore-display]\n";
 			return ExitCode::InvalidArguments;
 		}
 
@@ -1102,6 +1244,13 @@ int main(int argc, char* argv[])
 		bool infiniteLoops = false;
 		bool strictDisplay = false;
 		bool ignoreDisplay = false;
+		bool startImmediately = false;
+		bool timeoutEnabled = false;
+
+		unsigned int timeoutSeconds = 0;
+
+		std::string sessionName;
+
 
 		unsigned int loopCount =
 			settings.defaultLoops;
@@ -1117,6 +1266,10 @@ int main(int argc, char* argv[])
 			{
 				useSendInput = true;
 			}
+			else if (option == "--start-immediately")
+			{
+				startImmediately = true;
+			}
 			else if (option == "--align-start")
 			{
 				alignStart = true;
@@ -1128,6 +1281,87 @@ int main(int argc, char* argv[])
 			else if (option == "--ignore-display")
 			{
 				ignoreDisplay = true;
+			}
+			else if (option == "--session")
+			{
+				if (argumentIndex + 1 >= argc)
+				{
+					std::cerr
+						<< "--session requires a session name\n";
+
+					return ExitCode::InvalidArguments;
+				}
+
+				sessionName =
+					argv[++argumentIndex];
+
+				if (!CancellationSession::isValidSessionName(
+						sessionName))
+				{
+					std::cerr
+						<< "Invalid session name. Use only letters, "
+						<< "numbers, hyphens, and underscores.\n";
+
+					return ExitCode::InvalidArguments;
+				}
+			}
+			else if (option == "--timeout")
+			{
+				if (argumentIndex + 1 >= argc)
+				{
+					std::cerr
+						<< "--timeout requires a positive number "
+						<< "of seconds\n";
+
+					return ExitCode::InvalidArguments;
+				}
+
+				const std::string timeoutValue =
+					argv[++argumentIndex];
+
+				try
+				{
+					std::size_t parsedLength = 0;
+
+					const unsigned long parsed =
+						std::stoul(
+							timeoutValue,
+							&parsedLength,
+							10);
+
+					if (parsedLength != timeoutValue.length())
+					{
+						throw std::invalid_argument(
+							"timeout contains extra characters");
+					}
+
+					if (parsed == 0)
+					{
+						throw std::invalid_argument(
+							"zero timeout");
+					}
+
+					if (parsed
+						> std::numeric_limits<unsigned int>::max())
+					{
+						throw std::out_of_range(
+							"timeout is too large");
+					}
+
+					timeoutSeconds =
+						static_cast<unsigned int>(parsed);
+
+					timeoutEnabled = true;
+				}
+				catch (...)
+				{
+					std::cerr
+						<< "Invalid timeout value: "
+						<< timeoutValue
+						<< '\n';
+
+					return ExitCode::InvalidArguments;
+				}
 			}
 			else if (option == "--loops")
 			{
@@ -1223,9 +1457,13 @@ int main(int argc, char* argv[])
 				alignStart,
 				strictDisplay,
 				ignoreDisplay,
+				startImmediately,
 				settings,
 				loopCount,
-				infiniteLoops);
+				infiniteLoops,
+				sessionName,
+				timeoutEnabled,
+				timeoutSeconds);
 		}
 
 		DryRunBackend backend;
@@ -1236,14 +1474,18 @@ int main(int argc, char* argv[])
 			alignStart,
 			strictDisplay,
 			ignoreDisplay,
+			startImmediately,
 			settings,
 			loopCount,
-			infiniteLoops);
+			infiniteLoops,
+			sessionName,
+			timeoutEnabled,
+			timeoutSeconds);
 	}
 
     std::cerr << "Unknown command: "
               << command
               << '\n';
 
-    return ExitCode::GeneralFailure;
+    return ExitCode::InvalidArguments;
 }
