@@ -12,6 +12,7 @@ enum class PlaybackState
     Paused,
     Progress,
     LoopCompleted,
+    Message,
     Completed,
     Cancelled,
     TimedOut,
@@ -28,7 +29,6 @@ struct PlaybackProgress
 
     bool infiniteLoops = false;
 
-    // Progress within the current loop.
     std::size_t completedEvents = 0;
     std::size_t totalEvents = 0;
 

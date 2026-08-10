@@ -721,9 +721,7 @@ void printPlaybackProgress(
 
         case PlaybackState::Progress:
             // DryRunBackend already displays progress.
-            // Live playback remains quiet to avoid affecting timing.
-            // The future Qt interface can use these values for a
-            // progress bar.
+            // A GUI can use completedEvents and totalEvents.
             break;
 
         case PlaybackState::LoopCompleted:
@@ -731,6 +729,16 @@ void printPlaybackProgress(
                 << "Completed loop "
                 << progress.currentLoop
                 << '\n';
+
+            break;
+
+        case PlaybackState::Message:
+            if (!progress.message.empty())
+            {
+                std::cout
+                    << progress.message
+                    << '\n';
+            }
 
             break;
 

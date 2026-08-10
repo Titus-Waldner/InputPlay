@@ -11,7 +11,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
+#include <sstream>
 #include <string>
 
 namespace
@@ -44,6 +44,44 @@ void reportPlaybackProgress(
     callbacks.onProgress(progress);
 }
 
+void reportMessage(
+    const PlaybackCallbacks& callbacks,
+    unsigned int currentLoop,
+    const PlaybackOptions& options,
+    std::size_t completedEvents,
+    std::size_t totalEvents,
+    const std::string& message)
+{
+    reportPlaybackProgress(
+        callbacks,
+        PlaybackState::Message,
+        currentLoop,
+        options.loopCount,
+        options.infiniteLoops,
+        completedEvents,
+        totalEvents,
+        message);
+}
+
+void reportFailure(
+    const PlaybackCallbacks& callbacks,
+    unsigned int currentLoop,
+    const PlaybackOptions& options,
+    std::size_t completedEvents,
+    std::size_t totalEvents,
+    const std::string& message)
+{
+    reportPlaybackProgress(
+        callbacks,
+        PlaybackState::Failed,
+        currentLoop,
+        options.loopCount,
+        options.infiniteLoops,
+        completedEvents,
+        totalEvents,
+        message);
+}
+
 bool isKeyPressed(int virtualKey)
 {
     return
@@ -63,26 +101,35 @@ bool waitForPlaybackStart(
     const CancellationSession* cancellationSession,
     PlaybackController& controller,
     const PlaybackCallbacks& callbacks,
-    unsigned int totalLoops,
-    bool infiniteLoops,
+    const PlaybackOptions& options,
     std::size_t totalEvents)
 {
     reportPlaybackProgress(
         callbacks,
         PlaybackState::Armed,
         0,
-        totalLoops,
-        infiniteLoops,
+        options.loopCount,
+        options.infiniteLoops,
         0,
         totalEvents,
         "Playback armed.");
 
-    std::cout
+    std::ostringstream instructions;
+
+    instructions
         << "Press "
         << keyNameFromVirtualKey(settings.playStartKey)
         << " to start or "
         << keyNameFromVirtualKey(settings.playCancelKey)
-        << " to cancel\n";
+        << " to cancel";
+
+    reportMessage(
+        callbacks,
+        0,
+        options,
+        0,
+        totalEvents,
+        instructions.str());
 
     bool startWasDown =
         isKeyPressed(settings.playStartKey);
@@ -138,22 +185,34 @@ bool waitForPlaybackStart(
 
 bool checkDisplayCompatibility(
     const Recording& recording,
-    bool strictDisplay,
-    bool ignoreDisplay,
+    const PlaybackOptions& options,
+    const PlaybackCallbacks& callbacks,
     std::string& errorMessage)
 {
-    if (ignoreDisplay)
+    if (options.ignoreDisplay)
     {
         return true;
     }
 
     if (!recording.hasDisplayMetadata())
     {
-        std::cout
-            << "Display compatibility: Unknown\n"
-            << "The recording does not contain display metadata.\n";
+        reportMessage(
+            callbacks,
+            0,
+            options,
+            0,
+            recording.eventCount(),
+            "Display compatibility: Unknown");
 
-        if (strictDisplay)
+        reportMessage(
+            callbacks,
+            0,
+            options,
+            0,
+            recording.eventCount(),
+            "The recording does not contain display metadata.");
+
+        if (options.strictDisplay)
         {
             errorMessage =
                 "Strict display validation requires display metadata.";
@@ -189,18 +248,27 @@ bool checkDisplayCompatibility(
     switch (compatibility)
     {
         case DisplayCompatibility::Exact:
-            std::cout
-                << "Display compatibility: Exact\n";
+            reportMessage(
+                callbacks,
+                0,
+                options,
+                0,
+                recording.eventCount(),
+                "Display compatibility: Exact");
 
             return true;
 
         case DisplayCompatibility::CompatibleWithWarnings:
-            std::cout
-                << "Display compatibility warning: "
-                << compatibilityMessage
-                << '\n';
+            reportMessage(
+                callbacks,
+                0,
+                options,
+                0,
+                recording.eventCount(),
+                "Display compatibility warning: "
+                    + compatibilityMessage);
 
-            if (strictDisplay)
+            if (options.strictDisplay)
             {
                 errorMessage =
                     "Strict display validation rejected "
@@ -212,12 +280,16 @@ bool checkDisplayCompatibility(
             return true;
 
         case DisplayCompatibility::Incompatible:
-            std::cout
-                << "Display compatibility warning: "
-                << compatibilityMessage
-                << '\n';
+            reportMessage(
+                callbacks,
+                0,
+                options,
+                0,
+                recording.eventCount(),
+                "Display compatibility warning: "
+                    + compatibilityMessage);
 
-            if (strictDisplay)
+            if (options.strictDisplay)
             {
                 errorMessage =
                     "The current display configuration is "
@@ -229,12 +301,26 @@ bool checkDisplayCompatibility(
             return true;
 
         case DisplayCompatibility::Unknown:
-            std::cout
-                << "Display compatibility: Unknown\n"
-                << compatibilityMessage
-                << '\n';
+            reportMessage(
+                callbacks,
+                0,
+                options,
+                0,
+                recording.eventCount(),
+                "Display compatibility: Unknown");
 
-            if (strictDisplay)
+            if (!compatibilityMessage.empty())
+            {
+                reportMessage(
+                    callbacks,
+                    0,
+                    options,
+                    0,
+                    recording.eventCount(),
+                    compatibilityMessage);
+            }
+
+            if (options.strictDisplay)
             {
                 errorMessage =
                     "Strict display validation could not "
@@ -257,8 +343,7 @@ void processExternalSessionControls(
     PlaybackController& controller,
     const PlaybackCallbacks& callbacks,
     unsigned int currentLoop,
-    unsigned int totalLoops,
-    bool infiniteLoops,
+    const PlaybackOptions& options,
     std::size_t completedEvents,
     std::size_t totalEvents)
 {
@@ -285,8 +370,8 @@ void processExternalSessionControls(
                 callbacks,
                 PlaybackState::Paused,
                 currentLoop,
-                totalLoops,
-                infiniteLoops,
+                options.loopCount,
+                options.infiniteLoops,
                 completedEvents,
                 totalEvents,
                 "Playback paused.");
@@ -304,8 +389,8 @@ void processExternalSessionControls(
                 callbacks,
                 PlaybackState::Playing,
                 currentLoop,
-                totalLoops,
-                infiniteLoops,
+                options.loopCount,
+                options.infiniteLoops,
                 completedEvents,
                 totalEvents,
                 "Playback resumed.");
@@ -338,21 +423,20 @@ PlaybackResult runPlayback(
     PlaybackController& controller,
     const PlaybackCallbacks& callbacks)
 {
-
     Recording recording;
-	std::string errorMessage;
+    std::string errorMessage;
 
-	reportPlaybackProgress(
-		callbacks,
-		PlaybackState::Preparing,
-		0,
-		options.loopCount,
-		options.infiniteLoops,
-		0,
-		0,
-		"Preparing playback.");
+    reportPlaybackProgress(
+        callbacks,
+        PlaybackState::Preparing,
+        0,
+        options.loopCount,
+        options.infiniteLoops,
+        0,
+        0,
+        "Preparing playback.");
 
-	CancellationSession cancellationSession;
+    CancellationSession cancellationSession;
 
     if (!options.sessionName.empty())
     {
@@ -360,10 +444,13 @@ PlaybackResult runPlayback(
                 options.sessionName,
                 errorMessage))
         {
-            std::cerr
-                << "Unable to create playback session: "
-                << errorMessage
-                << '\n';
+            reportFailure(
+                callbacks,
+                0,
+                options,
+                0,
+                0,
+                errorMessage);
 
             return makePlaybackResult(
                 PlaybackResultCode::InternalError,
@@ -372,10 +459,14 @@ PlaybackResult runPlayback(
                 0);
         }
 
-        std::cout
-            << "Playback session: "
-            << options.sessionName
-            << '\n';
+        reportMessage(
+            callbacks,
+            0,
+            options,
+            0,
+            0,
+            "Playback session: "
+                + options.sessionName);
     }
 
     if (!RecordingFile::load(
@@ -383,10 +474,13 @@ PlaybackResult runPlayback(
             recording,
             errorMessage))
     {
-        std::cerr
-            << "Unable to load recording: "
-            << errorMessage
-            << '\n';
+        reportFailure(
+            callbacks,
+            0,
+            options,
+            0,
+            0,
+            errorMessage);
 
         return makePlaybackResult(
             PlaybackResultCode::RecordingLoadFailed,
@@ -397,8 +491,23 @@ PlaybackResult runPlayback(
 
     if (recording.empty())
     {
-        std::cout
-            << "Recording contains no events\n";
+        reportMessage(
+            callbacks,
+            0,
+            options,
+            0,
+            0,
+            "Recording contains no events");
+
+        reportPlaybackProgress(
+            callbacks,
+            PlaybackState::Completed,
+            0,
+            options.loopCount,
+            options.infiniteLoops,
+            0,
+            0,
+            "Playback completed.");
 
         return makePlaybackResult(
             PlaybackResultCode::Completed,
@@ -409,14 +518,17 @@ PlaybackResult runPlayback(
 
     if (!checkDisplayCompatibility(
             recording,
-            options.strictDisplay,
-            options.ignoreDisplay,
+            options,
+            callbacks,
             errorMessage))
     {
-        std::cerr
-            << "Display validation failed: "
-            << errorMessage
-            << '\n';
+        reportFailure(
+            callbacks,
+            0,
+            options,
+            0,
+            recording.eventCount(),
+            errorMessage);
 
         return makePlaybackResult(
             PlaybackResultCode::DisplayIncompatible,
@@ -431,9 +543,13 @@ PlaybackResult runPlayback(
         const std::string message =
             "Recording does not contain a starting cursor position.";
 
-        std::cerr
-            << message
-            << '\n';
+        reportFailure(
+            callbacks,
+            0,
+            options,
+            0,
+            recording.eventCount(),
+            message);
 
         return makePlaybackResult(
             PlaybackResultCode::InternalError,
@@ -450,57 +566,87 @@ PlaybackResult runPlayback(
     if (!options.startImmediately)
     {
         if (!waitForPlaybackStart(
-			settings,
-			sessionPointer,
-			controller,
-			callbacks,
-			options.loopCount,
-			options.infiniteLoops,
-			recording.eventCount()))
-		{
-			backend.releaseAll();
+                settings,
+                sessionPointer,
+                controller,
+                callbacks,
+                options,
+                recording.eventCount()))
+        {
+            backend.releaseAll();
 
-			reportPlaybackProgress(
-			callbacks,
-			PlaybackState::Cancelled,
-			0,
-			options.loopCount,
-			options.infiniteLoops,
-			0,
-			recording.eventCount(),
-			"Playback cancelled before start.");
+            reportPlaybackProgress(
+                callbacks,
+                PlaybackState::Cancelled,
+                0,
+                options.loopCount,
+                options.infiniteLoops,
+                0,
+                recording.eventCount(),
+                "Playback cancelled before start.");
 
-			return makePlaybackResult(
-				PlaybackResultCode::Cancelled,
-				"Playback cancelled before start.",
-				0,
-				0);
-		}
+            return makePlaybackResult(
+                PlaybackResultCode::Cancelled,
+                "Playback cancelled before start.",
+                0,
+                0);
+        }
     }
     else
     {
-        std::cout
-            << "Playback starting immediately\n";
+        reportMessage(
+            callbacks,
+            0,
+            options,
+            0,
+            recording.eventCount(),
+            "Playback starting immediately");
     }
 
-    std::cout
-        << "Playback controls: "
-        << keyNameFromVirtualKey(settings.playPauseKey)
-        << " pauses/resumes, "
-        << keyNameFromVirtualKey(settings.playCancelKey)
-        << " cancels\n";
+    {
+        std::ostringstream controlsMessage;
+
+        controlsMessage
+            << "Playback controls: "
+            << keyNameFromVirtualKey(settings.playPauseKey)
+            << " pauses/resumes, "
+            << keyNameFromVirtualKey(settings.playCancelKey)
+            << " cancels";
+
+        reportMessage(
+            callbacks,
+            0,
+            options,
+            0,
+            recording.eventCount(),
+            controlsMessage.str());
+    }
 
     if (options.infiniteLoops)
     {
-        std::cout
-            << "Loops: infinite\n";
+        reportMessage(
+            callbacks,
+            0,
+            options,
+            0,
+            recording.eventCount(),
+            "Loops: infinite");
     }
     else
     {
-        std::cout
+        std::ostringstream loopsMessage;
+
+        loopsMessage
             << "Loops: "
-            << options.loopCount
-            << '\n';
+            << options.loopCount;
+
+        reportMessage(
+            callbacks,
+            0,
+            options,
+            0,
+            recording.eventCount(),
+            loopsMessage.str());
     }
 
     using Clock = std::chrono::steady_clock;
@@ -518,10 +664,20 @@ PlaybackResult runPlayback(
             + std::chrono::seconds(
                 options.timeoutSeconds);
 
-        std::cout
+        std::ostringstream timeoutMessage;
+
+        timeoutMessage
             << "Timeout: "
             << options.timeoutSeconds
-            << " seconds\n";
+            << " seconds";
+
+        reportMessage(
+            callbacks,
+            0,
+            options,
+            0,
+            recording.eventCount(),
+            timeoutMessage.str());
     }
 
     unsigned int completedLoops = 0;
@@ -545,19 +701,18 @@ PlaybackResult runPlayback(
         }
 
         processExternalSessionControls(
-			&cancellationSession,
-			controller,
-			callbacks,
-			completedLoops + 1,
-			options.loopCount,
-			options.infiniteLoops,
-			completedEvents,
-			recording.eventCount());
+            &cancellationSession,
+            controller,
+            callbacks,
+            completedLoops + 1,
+            options,
+            completedEvents,
+            recording.eventCount());
 
-		if (controller.cancellationRequested())
-		{
-			break;
-		}
+        if (controller.cancellationRequested())
+        {
+            break;
+        }
 
         if (options.alignStart)
         {
@@ -570,9 +725,13 @@ PlaybackResult runPlayback(
                 const std::string message =
                     "Windows was unable to align the cursor.";
 
-                std::cerr
-                    << message
-                    << '\n';
+                reportFailure(
+                    callbacks,
+                    completedLoops + 1,
+                    options,
+                    completedEvents,
+                    recording.eventCount(),
+                    message);
 
                 return makePlaybackResult(
                     PlaybackResultCode::InternalError,
@@ -581,33 +740,42 @@ PlaybackResult runPlayback(
                     completedEvents);
             }
 
-            std::cout
+            std::ostringstream alignmentMessage;
+
+            alignmentMessage
                 << "Cursor aligned to "
                 << recording.startingCursorX()
                 << ", "
-                << recording.startingCursorY()
-                << '\n';
+                << recording.startingCursorY();
+
+            reportMessage(
+                callbacks,
+                completedLoops + 1,
+                options,
+                completedEvents,
+                recording.eventCount(),
+                alignmentMessage.str());
         }
 
         reportPlaybackProgress(
-			callbacks,
-			PlaybackState::Playing,
-			completedLoops + 1,
-			options.loopCount,
-			options.infiniteLoops,
-			completedEvents,
-			recording.eventCount(),
-			"Playback loop started.");
+            callbacks,
+            PlaybackState::Playing,
+            completedLoops + 1,
+            options.loopCount,
+            options.infiniteLoops,
+            completedEvents,
+            recording.eventCount(),
+            "Playback loop started.");
 
         const Clock::time_point playbackStart =
             Clock::now();
 
         std::chrono::microseconds pausedDuration{0};
-		std::uint64_t addedWaitMicroseconds = 0;
+        std::uint64_t addedWaitMicroseconds = 0;
 
-		std::size_t completedEventsInLoop = 0;
+        std::size_t completedEventsInLoop = 0;
 
-		bool pauseKeyWasDown =
+        bool pauseKeyWasDown =
             isKeyPressed(settings.playPauseKey);
 
         bool cancelKeyWasDown =
@@ -636,19 +804,18 @@ PlaybackResult runPlayback(
                 }
 
                 processExternalSessionControls(
-					&cancellationSession,
-					controller,
-					callbacks,
-					completedLoops + 1,
-					options.loopCount,
-					options.infiniteLoops,
-					completedEvents,
-					recording.eventCount());
+                    &cancellationSession,
+                    controller,
+                    callbacks,
+                    completedLoops + 1,
+                    options,
+                    completedEvents,
+                    recording.eventCount());
 
-				if (controller.cancellationRequested())
-				{
-					break;
-				}
+                if (controller.cancellationRequested())
+                {
+                    break;
+                }
 
                 const bool cancelKeyIsDown =
                     isKeyPressed(
@@ -674,29 +841,29 @@ PlaybackResult runPlayback(
                     controller.togglePause();
 
                     if (controller.paused())
-					{
-						reportPlaybackProgress(
-							callbacks,
-							PlaybackState::Paused,
-							completedLoops + 1,
-							options.loopCount,
-							options.infiniteLoops,
-							completedEvents,
-							recording.eventCount(),
-							"Playback paused.");
-					}
-					else
-					{
-						reportPlaybackProgress(
-							callbacks,
-							PlaybackState::Playing,
-							completedLoops + 1,
-							options.loopCount,
-							options.infiniteLoops,
-							completedEvents,
-							recording.eventCount(),
-							"Playback resumed.");
-					}
+                    {
+                        reportPlaybackProgress(
+                            callbacks,
+                            PlaybackState::Paused,
+                            completedLoops + 1,
+                            options.loopCount,
+                            options.infiniteLoops,
+                            completedEvents,
+                            recording.eventCount(),
+                            "Playback paused.");
+                    }
+                    else
+                    {
+                        reportPlaybackProgress(
+                            callbacks,
+                            PlaybackState::Playing,
+                            completedLoops + 1,
+                            options.loopCount,
+                            options.infiniteLoops,
+                            completedEvents,
+                            recording.eventCount(),
+                            "Playback resumed.");
+                    }
                 }
 
                 pauseKeyWasDown =
@@ -737,30 +904,30 @@ PlaybackResult runPlayback(
             }
 
             if (event.type == EventType::Wait)
-			{
-				addedWaitMicroseconds +=
-					event.waitMicroseconds;
+            {
+                addedWaitMicroseconds +=
+                    event.waitMicroseconds;
 
-				++completedEvents;
-				++completedEventsInLoop;
+                ++completedEvents;
+                ++completedEventsInLoop;
 
-				if (completedEventsInLoop % 250 == 0
-					|| completedEventsInLoop
-						== recording.eventCount())
-				{
-					reportPlaybackProgress(
-						callbacks,
-						PlaybackState::Progress,
-						completedLoops + 1,
-						options.loopCount,
-						options.infiniteLoops,
-						completedEventsInLoop,
-						recording.eventCount(),
-						"Playback progress.");
-				}
+                if (completedEventsInLoop % 250 == 0
+                    || completedEventsInLoop
+                        == recording.eventCount())
+                {
+                    reportPlaybackProgress(
+                        callbacks,
+                        PlaybackState::Progress,
+                        completedLoops + 1,
+                        options.loopCount,
+                        options.infiniteLoops,
+                        completedEventsInLoop,
+                        recording.eventCount(),
+                        "Playback progress.");
+                }
 
-				continue;
-			}
+                continue;
+            }
 
             if (!backend.execute(
                     event,
@@ -768,10 +935,13 @@ PlaybackResult runPlayback(
             {
                 backend.releaseAll();
 
-                std::cerr
-                    << "Playback failed: "
-                    << errorMessage
-                    << '\n';
+                reportFailure(
+                    callbacks,
+                    completedLoops + 1,
+                    options,
+                    completedEvents,
+                    recording.eventCount(),
+                    errorMessage);
 
                 return makePlaybackResult(
                     PlaybackResultCode::BackendFailed,
@@ -781,22 +951,22 @@ PlaybackResult runPlayback(
             }
 
             ++completedEvents;
-			++completedEventsInLoop;
+            ++completedEventsInLoop;
 
-			if (completedEventsInLoop % 250 == 0
-				|| completedEventsInLoop
-					== recording.eventCount())
-			{
-				reportPlaybackProgress(
-					callbacks,
-					PlaybackState::Progress,
-					completedLoops + 1,
-					options.loopCount,
-					options.infiniteLoops,
-					completedEventsInLoop,
-					recording.eventCount(),
-					"Playback progress.");
-			}
+            if (completedEventsInLoop % 250 == 0
+                || completedEventsInLoop
+                    == recording.eventCount())
+            {
+                reportPlaybackProgress(
+                    callbacks,
+                    PlaybackState::Progress,
+                    completedLoops + 1,
+                    options.loopCount,
+                    options.infiniteLoops,
+                    completedEventsInLoop,
+                    recording.eventCount(),
+                    "Playback progress.");
+            }
         }
 
         backend.releaseAll();
@@ -809,75 +979,70 @@ PlaybackResult runPlayback(
 
         ++completedLoops;
 
-		reportPlaybackProgress(
-			callbacks,
-			PlaybackState::LoopCompleted,
-			completedLoops,
-			options.loopCount,
-			options.infiniteLoops,
-			recording.eventCount(),
-			recording.eventCount(),
-			"Playback loop completed.");
-
-        std::cout
-            << "Completed loop "
-            << completedLoops
-            << '\n';
+        reportPlaybackProgress(
+            callbacks,
+            PlaybackState::LoopCompleted,
+            completedLoops,
+            options.loopCount,
+            options.infiniteLoops,
+            recording.eventCount(),
+            recording.eventCount(),
+            "Playback loop completed.");
     }
 
     backend.releaseAll();
 
-	if (timedOut)
-	{
-		reportPlaybackProgress(
-			callbacks,
-			PlaybackState::TimedOut,
-			completedLoops + 1,
-			options.loopCount,
-			options.infiniteLoops,
-			completedEvents,
-			recording.eventCount(),
-			"Playback timed out.");
+    if (timedOut)
+    {
+        reportPlaybackProgress(
+            callbacks,
+            PlaybackState::TimedOut,
+            completedLoops + 1,
+            options.loopCount,
+            options.infiniteLoops,
+            completedEvents,
+            recording.eventCount(),
+            "Playback timed out.");
 
-		return makePlaybackResult(
-			PlaybackResultCode::TimedOut,
-			"Playback timed out.",
-			completedLoops,
-			completedEvents);
-	}
+        return makePlaybackResult(
+            PlaybackResultCode::TimedOut,
+            "Playback timed out.",
+            completedLoops,
+            completedEvents);
+    }
 
-	if (controller.cancellationRequested())
-	{
-		reportPlaybackProgress(
-			callbacks,
-			PlaybackState::Cancelled,
-			completedLoops + 1,
-			options.loopCount,
-			options.infiniteLoops,
-			completedEvents,
-			recording.eventCount(),
-			"Playback cancelled.");
+    if (controller.cancellationRequested())
+    {
+        reportPlaybackProgress(
+            callbacks,
+            PlaybackState::Cancelled,
+            completedLoops + 1,
+            options.loopCount,
+            options.infiniteLoops,
+            completedEvents,
+            recording.eventCount(),
+            "Playback cancelled.");
 
-		return makePlaybackResult(
-			PlaybackResultCode::Cancelled,
-			"Playback cancelled.",
-			completedLoops,
-			completedEvents);
-	}
+        return makePlaybackResult(
+            PlaybackResultCode::Cancelled,
+            "Playback cancelled.",
+            completedLoops,
+            completedEvents);
+    }
 
-	reportPlaybackProgress(
-		callbacks,
-		PlaybackState::Completed,
-		completedLoops,
-		options.loopCount,
-		options.infiniteLoops,
-		completedEvents,
-		recording.eventCount(),
-		"Playback completed.");
+    reportPlaybackProgress(
+        callbacks,
+        PlaybackState::Completed,
+        completedLoops,
+        options.loopCount,
+        options.infiniteLoops,
+        completedEvents,
+        recording.eventCount(),
+        "Playback completed.");
 
-	return makePlaybackResult(
-		PlaybackResultCode::Completed,
-		"Playback completed.",
-		completedLoops,
-		completedEvents);
+    return makePlaybackResult(
+        PlaybackResultCode::Completed,
+        "Playback completed.",
+        completedLoops,
+        completedEvents);
 }
