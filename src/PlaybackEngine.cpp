@@ -9,6 +9,7 @@
 #include <windows.h>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <string>
@@ -31,7 +32,8 @@ void waitForKeyRelease(int virtualKey)
 
 bool waitForPlaybackStart(
     const Settings& settings,
-    const CancellationSession* cancellationSession)
+    const CancellationSession* cancellationSession,
+    PlaybackController& controller)
 {
     std::cout
         << "Playback armed\n"
@@ -49,9 +51,16 @@ bool waitForPlaybackStart(
 
     while (true)
     {
-        if (cancellationSession != nullptr
-            && cancellationSession->isCancellationRequested())
+        if (controller.cancellationRequested())
         {
+            return false;
+        }
+
+        if (cancellationSession != nullptr
+            && cancellationSession
+                ->isCancellationRequested())
+        {
+            controller.requestCancel();
             return false;
         }
 
@@ -63,13 +72,19 @@ bool waitForPlaybackStart(
 
         if (cancelIsDown && !cancelWasDown)
         {
-            waitForKeyRelease(settings.playCancelKey);
+            controller.requestCancel();
+
+            waitForKeyRelease(
+                settings.playCancelKey);
+
             return false;
         }
 
         if (startIsDown && !startWasDown)
         {
-            waitForKeyRelease(settings.playStartKey);
+            waitForKeyRelease(
+                settings.playStartKey);
+
             return true;
         }
 
@@ -196,6 +211,47 @@ bool checkDisplayCompatibility(
     return false;
 }
 
+void processExternalSessionControls(
+    CancellationSession* cancellationSession,
+    PlaybackController& controller)
+{
+    if (cancellationSession == nullptr)
+    {
+        return;
+    }
+
+    if (cancellationSession
+        ->isCancellationRequested())
+    {
+        controller.requestCancel();
+        return;
+    }
+
+    if (cancellationSession
+        ->consumePauseRequest())
+    {
+        if (!controller.paused())
+        {
+            controller.requestPause();
+
+            std::cout
+                << "Playback paused\n";
+        }
+    }
+
+    if (cancellationSession
+        ->consumeResumeRequest())
+    {
+        if (controller.paused())
+        {
+            controller.requestResume();
+
+            std::cout
+                << "Playback resumed\n";
+        }
+    }
+}
+
 PlaybackResult makePlaybackResult(
     PlaybackResultCode code,
     const std::string& message,
@@ -217,7 +273,8 @@ PlaybackResult runPlayback(
     const std::string& filePath,
     IInputBackend& backend,
     const Settings& settings,
-    const PlaybackOptions& options)
+    const PlaybackOptions& options,
+    PlaybackController& controller)
 {
     Recording recording;
     std::string errorMessage;
@@ -236,10 +293,10 @@ PlaybackResult runPlayback(
                 << '\n';
 
             return makePlaybackResult(
-				PlaybackResultCode::InternalError,
-				errorMessage,
-				0,
-				0);
+                PlaybackResultCode::InternalError,
+                errorMessage,
+                0,
+                0);
         }
 
         std::cout
@@ -249,98 +306,98 @@ PlaybackResult runPlayback(
     }
 
     if (!RecordingFile::load(
-        filePath,
-        recording,
-        errorMessage))
-	{
-		std::cerr
-			<< "Unable to load recording: "
-			<< errorMessage
-			<< '\n';
+            filePath,
+            recording,
+            errorMessage))
+    {
+        std::cerr
+            << "Unable to load recording: "
+            << errorMessage
+            << '\n';
 
-		return makePlaybackResult(
-			PlaybackResultCode::RecordingLoadFailed,
-			errorMessage,
-			0,
-			0);
-	}
+        return makePlaybackResult(
+            PlaybackResultCode::RecordingLoadFailed,
+            errorMessage,
+            0,
+            0);
+    }
 
     if (recording.empty())
-	{
-		std::cout
-			<< "Recording contains no events\n";
+    {
+        std::cout
+            << "Recording contains no events\n";
 
-		return makePlaybackResult(
-			PlaybackResultCode::Completed,
-			"Recording contains no events.",
-			0,
-			0);
-	}
-
+        return makePlaybackResult(
+            PlaybackResultCode::Completed,
+            "Recording contains no events.",
+            0,
+            0);
+    }
 
     if (!checkDisplayCompatibility(
-        recording,
-        options.strictDisplay,
-        options.ignoreDisplay,
-        errorMessage))
-	{
-		std::cerr
-			<< "Display validation failed: "
-			<< errorMessage
-			<< '\n';
+            recording,
+            options.strictDisplay,
+            options.ignoreDisplay,
+            errorMessage))
+    {
+        std::cerr
+            << "Display validation failed: "
+            << errorMessage
+            << '\n';
 
-		return makePlaybackResult(
-			PlaybackResultCode::DisplayIncompatible,
-			errorMessage,
-			0,
-			0);
-	}
+        return makePlaybackResult(
+            PlaybackResultCode::DisplayIncompatible,
+            errorMessage,
+            0,
+            0);
+    }
 
     if (options.alignStart
-    && !recording.hasStartingCursorPosition())
-	{
-		const std::string message =
-			"Recording does not contain a starting cursor position.";
+        && !recording.hasStartingCursorPosition())
+    {
+        const std::string message =
+            "Recording does not contain a starting cursor position.";
 
-		std::cerr
-			<< message
-			<< '\n';
+        std::cerr
+            << message
+            << '\n';
 
-		return makePlaybackResult(
-			PlaybackResultCode::InternalError,
-			message,
-			0,
-			0);
-	}
+        return makePlaybackResult(
+            PlaybackResultCode::InternalError,
+            message,
+            0,
+            0);
+    }
 
     const CancellationSession* sessionPointer =
         options.sessionName.empty()
         ? nullptr
         : &cancellationSession;
 
-	if (!options.startImmediately)
-	{
-		if (!waitForPlaybackStart(
-				settings,
-				sessionPointer))
-		{
-			backend.releaseAll();
+    if (!options.startImmediately)
+    {
+        if (!waitForPlaybackStart(
+                settings,
+                sessionPointer,
+                controller))
+        {
+            backend.releaseAll();
 
-			std::cout
-				<< "Playback cancelled before start\n";
+            std::cout
+                << "Playback cancelled before start\n";
 
-			return makePlaybackResult(
-				PlaybackResultCode::Cancelled,
-				"Playback cancelled before start.",
-				0,
-				0);
-		}
-	}
-	else
-	{
-		std::cout
-			<< "Playback starting immediately\n";
-	}
+            return makePlaybackResult(
+                PlaybackResultCode::Cancelled,
+                "Playback cancelled before start.",
+                0,
+                0);
+        }
+    }
+    else
+    {
+        std::cout
+            << "Playback starting immediately\n";
+    }
 
     std::cout
         << "Playback controls: "
@@ -351,7 +408,8 @@ PlaybackResult runPlayback(
 
     if (options.infiniteLoops)
     {
-        std::cout << "Loops: infinite\n";
+        std::cout
+            << "Loops: infinite\n";
     }
     else
     {
@@ -383,10 +441,9 @@ PlaybackResult runPlayback(
     }
 
     unsigned int completedLoops = 0;
-	std::size_t completedEvents = 0;
+    std::size_t completedEvents = 0;
 
-	bool cancelled = false;
-	bool timedOut = false;
+    bool timedOut = false;
 
     while (options.infiniteLoops
            || completedLoops < options.loopCount)
@@ -398,34 +455,41 @@ PlaybackResult runPlayback(
             break;
         }
 
-        if (sessionPointer != nullptr
-            && sessionPointer->isCancellationRequested())
+        if (controller.cancellationRequested())
         {
-            cancelled = true;
             break;
         }
+
+        processExternalSessionControls(
+			&cancellationSession,
+			controller);
+
+		if (controller.cancellationRequested())
+		{
+			break;
+		}
 
         if (options.alignStart)
         {
             if (!SetCursorPos(
-				recording.startingCursorX(),
-				recording.startingCursorY()))
-			{
-				backend.releaseAll();
+                    recording.startingCursorX(),
+                    recording.startingCursorY()))
+            {
+                backend.releaseAll();
 
-				const std::string message =
-					"Windows was unable to align the cursor.";
+                const std::string message =
+                    "Windows was unable to align the cursor.";
 
-				std::cerr
-					<< message
-					<< '\n';
+                std::cerr
+                    << message
+                    << '\n';
 
-				return makePlaybackResult(
-					PlaybackResultCode::InternalError,
-					message,
-					completedLoops,
-					completedEvents);
-			}
+                return makePlaybackResult(
+                    PlaybackResultCode::InternalError,
+                    message,
+                    completedLoops,
+                    completedEvents);
+            }
 
             std::cout
                 << "Cursor aligned to "
@@ -445,8 +509,6 @@ PlaybackResult runPlayback(
 
         std::chrono::microseconds pausedDuration{0};
         std::uint64_t addedWaitMicroseconds = 0;
-
-        bool paused = false;
 
         bool pauseKeyWasDown =
             isKeyPressed(settings.playPauseKey);
@@ -471,13 +533,19 @@ PlaybackResult runPlayback(
                     break;
                 }
 
-                if (sessionPointer != nullptr
-                    && sessionPointer
-                        ->isCancellationRequested())
+                if (controller.cancellationRequested())
                 {
-                    cancelled = true;
                     break;
                 }
+
+                processExternalSessionControls(
+					&cancellationSession,
+					controller);
+
+				if (controller.cancellationRequested())
+				{
+					break;
+				}
 
                 const bool cancelKeyIsDown =
                     isKeyPressed(
@@ -486,7 +554,7 @@ PlaybackResult runPlayback(
                 if (cancelKeyIsDown
                     && !cancelKeyWasDown)
                 {
-                    cancelled = true;
+                    controller.requestCancel();
                     break;
                 }
 
@@ -500,9 +568,9 @@ PlaybackResult runPlayback(
                 if (pauseKeyIsDown
                     && !pauseKeyWasDown)
                 {
-                    paused = !paused;
+                    controller.togglePause();
 
-                    if (paused)
+                    if (controller.paused())
                     {
                         std::cout
                             << "Playback paused\n";
@@ -517,7 +585,7 @@ PlaybackResult runPlayback(
                 pauseKeyWasDown =
                     pauseKeyIsDown;
 
-                if (paused)
+                if (controller.paused())
                 {
                     const Clock::time_point pauseTick =
                         Clock::now();
@@ -545,44 +613,46 @@ PlaybackResult runPlayback(
                 Sleep(1);
             }
 
-            if (cancelled || timedOut)
+            if (controller.cancellationRequested()
+                || timedOut)
             {
                 break;
             }
 
             if (event.type == EventType::Wait)
-			{
-				addedWaitMicroseconds +=
-					event.waitMicroseconds;
+            {
+                addedWaitMicroseconds +=
+                    event.waitMicroseconds;
 
-				++completedEvents;
-				continue;
-			}
+                ++completedEvents;
+                continue;
+            }
 
             if (!backend.execute(
-				event,
-				errorMessage))
-			{
-				backend.releaseAll();
+                    event,
+                    errorMessage))
+            {
+                backend.releaseAll();
 
-				std::cerr
-					<< "Playback failed: "
-					<< errorMessage
-					<< '\n';
+                std::cerr
+                    << "Playback failed: "
+                    << errorMessage
+                    << '\n';
 
-				return makePlaybackResult(
-					PlaybackResultCode::BackendFailed,
-					errorMessage,
-					completedLoops,
-					completedEvents);
-			}
+                return makePlaybackResult(
+                    PlaybackResultCode::BackendFailed,
+                    errorMessage,
+                    completedLoops,
+                    completedEvents);
+            }
 
-			++completedEvents;
+            ++completedEvents;
         }
 
         backend.releaseAll();
 
-        if (cancelled || timedOut)
+        if (controller.cancellationRequested()
+            || timedOut)
         {
             break;
         }
@@ -598,35 +668,35 @@ PlaybackResult runPlayback(
     backend.releaseAll();
 
     if (timedOut)
-	{
-		std::cout
-			<< "Playback timed out\n";
+    {
+        std::cout
+            << "Playback timed out\n";
 
-		return makePlaybackResult(
-			PlaybackResultCode::TimedOut,
-			"Playback timed out.",
-			completedLoops,
-			completedEvents);
-	}
+        return makePlaybackResult(
+            PlaybackResultCode::TimedOut,
+            "Playback timed out.",
+            completedLoops,
+            completedEvents);
+    }
 
-	if (cancelled)
-	{
-		std::cout
-			<< "Playback cancelled\n";
+    if (controller.cancellationRequested())
+    {
+        std::cout
+            << "Playback cancelled\n";
 
-		return makePlaybackResult(
-			PlaybackResultCode::Cancelled,
-			"Playback cancelled.",
-			completedLoops,
-			completedEvents);
-	}
+        return makePlaybackResult(
+            PlaybackResultCode::Cancelled,
+            "Playback cancelled.",
+            completedLoops,
+            completedEvents);
+    }
 
-	std::cout
-		<< "Playback completed\n";
+    std::cout
+        << "Playback completed\n";
 
-	return makePlaybackResult(
-		PlaybackResultCode::Completed,
-		"Playback completed.",
-		completedLoops,
-		completedEvents);
+    return makePlaybackResult(
+        PlaybackResultCode::Completed,
+        "Playback completed.",
+        completedLoops,
+        completedEvents);
 }

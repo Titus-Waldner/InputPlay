@@ -18,9 +18,21 @@ public:
         const std::string& sessionName,
         std::string& errorMessage);
 
-    [[nodiscard]] bool isCancellationRequested() const;
+    [[nodiscard]]
+    bool isCancellationRequested() const;
+
+    bool consumePauseRequest();
+    bool consumeResumeRequest();
 
     static bool requestCancellation(
+        const std::string& sessionName,
+        std::string& errorMessage);
+
+    static bool requestPause(
+        const std::string& sessionName,
+        std::string& errorMessage);
+
+    static bool requestResume(
         const std::string& sessionName,
         std::string& errorMessage);
 
@@ -28,5 +40,9 @@ public:
         const std::string& sessionName);
 
 private:
-    void* eventHandle_ = nullptr;
+    void closeHandles();
+
+    void* cancellationEventHandle_ = nullptr;
+    void* pauseEventHandle_ = nullptr;
+    void* resumeEventHandle_ = nullptr;
 };

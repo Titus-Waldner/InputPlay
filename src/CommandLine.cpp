@@ -12,7 +12,7 @@
 #include "PlaybackEngine.h"
 #include "CommandLine.h"
 #include "RecordingSummary.h"
-
+#include "PlaybackController.h"
 
 #include <limits>
 #include <iomanip>
@@ -74,6 +74,8 @@ void printHelp()
 				<< "[--strict-display|--ignore-display]\n";
 
     std::cout << "  cancel <session>\n";
+	std::cout << "  pause <session>\n";
+	std::cout << "  resume <session>\n";
     std::cout << "  info <file>\n";
     std::cout << "  validate <file>\n";
     std::cout << "  test-model\n";
@@ -552,6 +554,56 @@ int playbackResultToExitCode(
     return ExitCode::GeneralFailure;
 }
 
+int runPauseCommand(
+    const std::string& sessionName)
+{
+    std::string errorMessage;
+
+    if (!CancellationSession::requestPause(
+            sessionName,
+            errorMessage))
+    {
+        std::cerr
+            << "Unable to pause session: "
+            << errorMessage
+            << '\n';
+
+        return ExitCode::GeneralFailure;
+    }
+
+    std::cout
+        << "Pause requested for session: "
+        << sessionName
+        << '\n';
+
+    return ExitCode::Success;
+}
+
+int runResumeCommand(
+    const std::string& sessionName)
+{
+    std::string errorMessage;
+
+    if (!CancellationSession::requestResume(
+            sessionName,
+            errorMessage))
+    {
+        std::cerr
+            << "Unable to resume session: "
+            << errorMessage
+            << '\n';
+
+        return ExitCode::GeneralFailure;
+    }
+
+    std::cout
+        << "Resume requested for session: "
+        << sessionName
+        << '\n';
+
+    return ExitCode::Success;
+}
+
 int runCancelCommand(
     const std::string& sessionName)
 {
@@ -668,6 +720,38 @@ int runCommandLine(
 		}
 
 		return runValidateCommand(argv[2]);
+	}
+	
+	if (command == "pause")
+	{
+		if (argc < 3)
+		{
+			std::cerr
+				<< "Missing playback session name\n";
+
+			std::cerr
+				<< "Usage: InputPlay pause <session>\n";
+
+			return ExitCode::InvalidArguments;
+		}
+
+		return runPauseCommand(argv[2]);
+	}
+
+	if (command == "resume")
+	{
+		if (argc < 3)
+		{
+			std::cerr
+				<< "Missing playback session name\n";
+
+			std::cerr
+				<< "Usage: InputPlay resume <session>\n";
+
+			return ExitCode::InvalidArguments;
+		}
+
+		return runResumeCommand(argv[2]);
 	}
 	
 	if (command == "cancel")
@@ -892,6 +976,8 @@ int runCommandLine(
 
 			return ExitCode::InvalidArguments;
 		}
+		PlaybackController controller;
+
 		if (useSendInput)
 		{
 			std::cout
@@ -904,7 +990,8 @@ int runCommandLine(
 					argv[2],
 					backend,
 					settings,
-					options);
+					options,
+					controller);
 
 			return playbackResultToExitCode(result);
 		}
@@ -916,7 +1003,8 @@ int runCommandLine(
 				argv[2],
 				backend,
 				settings,
-				options);
+				options,
+				controller);
 
 		return playbackResultToExitCode(result);
 		}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IInputBackend.h"
+#include "PlaybackController.h"
 #include "PlaybackOptions.h"
 #include "PlaybackResult.h"
 #include "Settings.h"
@@ -11,4 +12,5 @@ PlaybackResult runPlayback(
     const std::string& filePath,
     IInputBackend& backend,
     const Settings& settings,
-    const PlaybackOptions& options);
+    const PlaybackOptions& options,
+    PlaybackController& controller);
