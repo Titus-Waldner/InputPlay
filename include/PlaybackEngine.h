@@ -3,6 +3,7 @@
 #include "IInputBackend.h"
 #include "PlaybackController.h"
 #include "PlaybackOptions.h"
+#include "PlaybackProgress.h"
 #include "PlaybackResult.h"
 #include "Settings.h"
 
@@ -13,4 +14,5 @@ PlaybackResult runPlayback(
     IInputBackend& backend,
     const Settings& settings,
     const PlaybackOptions& options,
-    PlaybackController& controller);
+    PlaybackController& controller,
+    const PlaybackCallbacks& callbacks);

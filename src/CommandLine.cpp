@@ -526,6 +526,75 @@ int runModelTest()
     return ExitCode::Success;
 }
 
+void printPlaybackProgress(
+    const PlaybackProgress& progress)
+{
+    switch (progress.state)
+    {
+        case PlaybackState::Preparing:
+            break;
+
+        case PlaybackState::Armed:
+            std::cout
+                << "Playback armed\n";
+
+            break;
+
+        case PlaybackState::Playing:
+            if (progress.message
+                == "Playback resumed.")
+            {
+                std::cout
+                    << "Playback resumed\n";
+            }
+            else if (progress.currentLoop > 0)
+            {
+                std::cout
+                    << "Starting loop "
+                    << progress.currentLoop
+                    << '\n';
+            }
+
+            break;
+
+        case PlaybackState::Paused:
+            std::cout
+                << "Playback paused\n";
+
+            break;
+
+        case PlaybackState::Completed:
+            std::cout
+                << "Playback completed\n";
+
+            break;
+
+        case PlaybackState::Cancelled:
+            std::cout
+                << progress.message
+                << '\n';
+
+            break;
+
+        case PlaybackState::TimedOut:
+            std::cout
+                << "Playback timed out\n";
+
+            break;
+
+        case PlaybackState::Failed:
+            if (!progress.message.empty())
+            {
+                std::cerr
+                    << "Playback failed: "
+                    << progress.message
+                    << '\n';
+            }
+
+            break;
+    }
+}
+
 int playbackResultToExitCode(
     const PlaybackResult& result)
 {
@@ -978,6 +1047,9 @@ int runCommandLine(
 		}
 		PlaybackController controller;
 
+		PlaybackCallbacks callbacks;
+		callbacks.onProgress = printPlaybackProgress;
+
 		if (useSendInput)
 		{
 			std::cout
@@ -986,12 +1058,13 @@ int runCommandLine(
 			SendInputBackend backend;
 
 			const PlaybackResult result =
-				runPlayback(
-					argv[2],
-					backend,
-					settings,
-					options,
-					controller);
+			runPlayback(
+				argv[2],
+				backend,
+				settings,
+				options,
+				controller,
+				callbacks);
 
 			return playbackResultToExitCode(result);
 		}
@@ -1004,7 +1077,8 @@ int runCommandLine(
 				backend,
 				settings,
 				options,
-				controller);
+				controller,
+				callbacks);
 
 		return playbackResultToExitCode(result);
 		}

@@ -16,6 +16,34 @@
 
 namespace
 {
+void reportPlaybackProgress(
+    const PlaybackCallbacks& callbacks,
+    PlaybackState state,
+    unsigned int currentLoop,
+    unsigned int totalLoops,
+    bool infiniteLoops,
+    std::size_t completedEvents,
+    std::size_t totalEvents,
+    const std::string& message)
+{
+    if (!callbacks.onProgress)
+    {
+        return;
+    }
+
+    PlaybackProgress progress;
+
+    progress.state = state;
+    progress.currentLoop = currentLoop;
+    progress.totalLoops = totalLoops;
+    progress.infiniteLoops = infiniteLoops;
+    progress.completedEvents = completedEvents;
+    progress.totalEvents = totalEvents;
+    progress.message = message;
+
+    callbacks.onProgress(progress);
+}
+
 bool isKeyPressed(int virtualKey)
 {
     return
@@ -33,10 +61,23 @@ void waitForKeyRelease(int virtualKey)
 bool waitForPlaybackStart(
     const Settings& settings,
     const CancellationSession* cancellationSession,
-    PlaybackController& controller)
+    PlaybackController& controller,
+    const PlaybackCallbacks& callbacks,
+    unsigned int totalLoops,
+    bool infiniteLoops,
+    std::size_t totalEvents)
 {
+    reportPlaybackProgress(
+        callbacks,
+        PlaybackState::Armed,
+        0,
+        totalLoops,
+        infiniteLoops,
+        0,
+        totalEvents,
+        "Playback armed.");
+
     std::cout
-        << "Playback armed\n"
         << "Press "
         << keyNameFromVirtualKey(settings.playStartKey)
         << " to start or "
@@ -213,7 +254,13 @@ bool checkDisplayCompatibility(
 
 void processExternalSessionControls(
     CancellationSession* cancellationSession,
-    PlaybackController& controller)
+    PlaybackController& controller,
+    const PlaybackCallbacks& callbacks,
+    unsigned int currentLoop,
+    unsigned int totalLoops,
+    bool infiniteLoops,
+    std::size_t completedEvents,
+    std::size_t totalEvents)
 {
     if (cancellationSession == nullptr)
     {
@@ -234,8 +281,15 @@ void processExternalSessionControls(
         {
             controller.requestPause();
 
-            std::cout
-                << "Playback paused\n";
+            reportPlaybackProgress(
+                callbacks,
+                PlaybackState::Paused,
+                currentLoop,
+                totalLoops,
+                infiniteLoops,
+                completedEvents,
+                totalEvents,
+                "Playback paused.");
         }
     }
 
@@ -246,8 +300,15 @@ void processExternalSessionControls(
         {
             controller.requestResume();
 
-            std::cout
-                << "Playback resumed\n";
+            reportPlaybackProgress(
+                callbacks,
+                PlaybackState::Playing,
+                currentLoop,
+                totalLoops,
+                infiniteLoops,
+                completedEvents,
+                totalEvents,
+                "Playback resumed.");
         }
     }
 }
@@ -274,12 +335,24 @@ PlaybackResult runPlayback(
     IInputBackend& backend,
     const Settings& settings,
     const PlaybackOptions& options,
-    PlaybackController& controller)
+    PlaybackController& controller,
+    const PlaybackCallbacks& callbacks)
 {
-    Recording recording;
-    std::string errorMessage;
 
-    CancellationSession cancellationSession;
+    Recording recording;
+	std::string errorMessage;
+
+	reportPlaybackProgress(
+		callbacks,
+		PlaybackState::Preparing,
+		0,
+		options.loopCount,
+		options.infiniteLoops,
+		0,
+		0,
+		"Preparing playback.");
+
+	CancellationSession cancellationSession;
 
     if (!options.sessionName.empty())
     {
@@ -377,21 +450,32 @@ PlaybackResult runPlayback(
     if (!options.startImmediately)
     {
         if (!waitForPlaybackStart(
-                settings,
-                sessionPointer,
-                controller))
-        {
-            backend.releaseAll();
+			settings,
+			sessionPointer,
+			controller,
+			callbacks,
+			options.loopCount,
+			options.infiniteLoops,
+			recording.eventCount()))
+		{
+			backend.releaseAll();
 
-            std::cout
-                << "Playback cancelled before start\n";
+			reportPlaybackProgress(
+			callbacks,
+			PlaybackState::Cancelled,
+			0,
+			options.loopCount,
+			options.infiniteLoops,
+			0,
+			recording.eventCount(),
+			"Playback cancelled before start.");
 
-            return makePlaybackResult(
-                PlaybackResultCode::Cancelled,
-                "Playback cancelled before start.",
-                0,
-                0);
-        }
+			return makePlaybackResult(
+				PlaybackResultCode::Cancelled,
+				"Playback cancelled before start.",
+				0,
+				0);
+		}
     }
     else
     {
@@ -462,7 +546,13 @@ PlaybackResult runPlayback(
 
         processExternalSessionControls(
 			&cancellationSession,
-			controller);
+			controller,
+			callbacks,
+			completedLoops + 1,
+			options.loopCount,
+			options.infiniteLoops,
+			completedEvents,
+			recording.eventCount());
 
 		if (controller.cancellationRequested())
 		{
@@ -499,10 +589,15 @@ PlaybackResult runPlayback(
                 << '\n';
         }
 
-        std::cout
-            << "Starting loop "
-            << completedLoops + 1
-            << '\n';
+        reportPlaybackProgress(
+			callbacks,
+			PlaybackState::Playing,
+			completedLoops + 1,
+			options.loopCount,
+			options.infiniteLoops,
+			completedEvents,
+			recording.eventCount(),
+			"Playback loop started.");
 
         const Clock::time_point playbackStart =
             Clock::now();
@@ -540,7 +635,13 @@ PlaybackResult runPlayback(
 
                 processExternalSessionControls(
 					&cancellationSession,
-					controller);
+					controller,
+					callbacks,
+					completedLoops + 1,
+					options.loopCount,
+					options.infiniteLoops,
+					completedEvents,
+					recording.eventCount());
 
 				if (controller.cancellationRequested())
 				{
@@ -571,15 +672,29 @@ PlaybackResult runPlayback(
                     controller.togglePause();
 
                     if (controller.paused())
-                    {
-                        std::cout
-                            << "Playback paused\n";
-                    }
-                    else
-                    {
-                        std::cout
-                            << "Playback resumed\n";
-                    }
+					{
+						reportPlaybackProgress(
+							callbacks,
+							PlaybackState::Paused,
+							completedLoops + 1,
+							options.loopCount,
+							options.infiniteLoops,
+							completedEvents,
+							recording.eventCount(),
+							"Playback paused.");
+					}
+					else
+					{
+						reportPlaybackProgress(
+							callbacks,
+							PlaybackState::Playing,
+							completedLoops + 1,
+							options.loopCount,
+							options.infiniteLoops,
+							completedEvents,
+							recording.eventCount(),
+							"Playback resumed.");
+					}
                 }
 
                 pauseKeyWasDown =
@@ -667,36 +782,57 @@ PlaybackResult runPlayback(
 
     backend.releaseAll();
 
-    if (timedOut)
-    {
-        std::cout
-            << "Playback timed out\n";
+	if (timedOut)
+	{
+		reportPlaybackProgress(
+			callbacks,
+			PlaybackState::TimedOut,
+			completedLoops + 1,
+			options.loopCount,
+			options.infiniteLoops,
+			completedEvents,
+			recording.eventCount(),
+			"Playback timed out.");
 
-        return makePlaybackResult(
-            PlaybackResultCode::TimedOut,
-            "Playback timed out.",
-            completedLoops,
-            completedEvents);
-    }
+		return makePlaybackResult(
+			PlaybackResultCode::TimedOut,
+			"Playback timed out.",
+			completedLoops,
+			completedEvents);
+	}
 
-    if (controller.cancellationRequested())
-    {
-        std::cout
-            << "Playback cancelled\n";
+	if (controller.cancellationRequested())
+	{
+		reportPlaybackProgress(
+			callbacks,
+			PlaybackState::Cancelled,
+			completedLoops + 1,
+			options.loopCount,
+			options.infiniteLoops,
+			completedEvents,
+			recording.eventCount(),
+			"Playback cancelled.");
 
-        return makePlaybackResult(
-            PlaybackResultCode::Cancelled,
-            "Playback cancelled.",
-            completedLoops,
-            completedEvents);
-    }
+		return makePlaybackResult(
+			PlaybackResultCode::Cancelled,
+			"Playback cancelled.",
+			completedLoops,
+			completedEvents);
+	}
 
-    std::cout
-        << "Playback completed\n";
+	reportPlaybackProgress(
+		callbacks,
+		PlaybackState::Completed,
+		completedLoops,
+		options.loopCount,
+		options.infiniteLoops,
+		completedEvents,
+		recording.eventCount(),
+		"Playback completed.");
 
-    return makePlaybackResult(
-        PlaybackResultCode::Completed,
-        "Playback completed.",
-        completedLoops,
-        completedEvents);
+	return makePlaybackResult(
+		PlaybackResultCode::Completed,
+		"Playback completed.",
+		completedLoops,
+		completedEvents);
 }
