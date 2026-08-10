@@ -1,15 +1,15 @@
 #pragma once
 
 #include "Recording.h"
-#include "Settings.h"
+#include "RecordingOptions.h"
+#include "RecordingResult.h"
 
 #include <string>
 
 class InputRecorder
 {
 public:
-    bool record(
+    RecordingResult record(
         Recording& recording,
-        const Settings& settings,
-        std::string& errorMessage);
+        const RecordingOptions& options);
 };

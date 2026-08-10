@@ -13,6 +13,8 @@
 #include "CommandLine.h"
 #include "RecordingSummary.h"
 #include "PlaybackController.h"
+#include "RecordingOptions.h"
+#include "RecordingResult.h"
 
 #include <limits>
 #include <iomanip>
@@ -162,40 +164,78 @@ int runRecordCommand(
 {
     Recording recording;
     InputRecorder recorder;
-    std::string errorMessage;
 
-    if (!recorder.record(
-        recording,
-        settings,
-        errorMessage))
+    RecordingOptions options;
+
+    options.startKey =
+        settings.recordStartKey;
+
+    options.pauseKey =
+        settings.recordPauseKey;
+
+    options.stopKey =
+        settings.recordStopKey;
+
+    options.waitForStartKey = true;
+    options.captureMouse = true;
+    options.captureKeyboard = true;
+
+    const RecordingResult recordingResult =
+        recorder.record(
+            recording,
+            options);
+
+    switch (recordingResult.code)
     {
-        std::cerr << "Recording failed: "
-                  << errorMessage
-                  << '\n';
+        case RecordingResultCode::Cancelled:
+            std::cout
+                << "Recording cancelled\n";
 
-        return ExitCode::GeneralFailure;
+            return ExitCode::Cancelled;
+
+        case RecordingResultCode::Failed:
+            std::cerr
+                << "Recording failed: "
+                << recordingResult.message
+                << '\n';
+
+            return ExitCode::GeneralFailure;
+
+        case RecordingResultCode::Completed:
+            break;
     }
+
+    std::string errorMessage;
 
     if (!RecordingFile::save(
             recording,
             filePath,
             errorMessage))
     {
-        std::cerr << "Unable to save recording: "
-                  << errorMessage
-                  << '\n';
+        std::cerr
+            << "Unable to save recording: "
+            << errorMessage
+            << '\n';
 
         return ExitCode::GeneralFailure;
     }
 
-    std::cout << "Recording saved\n";
-    std::cout << "File: " << filePath << '\n';
-    std::cout << "Events: "
-              << recording.eventCount()
-              << '\n';
+    std::cout
+        << "Recording saved\n";
+
+    std::cout
+        << "File: "
+        << filePath
+        << '\n';
+
+    std::cout
+        << "Events: "
+        << recordingResult.eventCount
+        << '\n';
 
     return ExitCode::Success;
 }
+
 int runInfoCommand(
     const std::string& filePath)
 {
