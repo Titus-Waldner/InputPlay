@@ -42,6 +42,43 @@ add_executable(
     src/CommandLine.cpp
 )
 
+include(CTest)
+
+if(BUILD_TESTING)
+    add_executable(
+        InputPlayCoreTests
+        tests/CoreTests.cpp
+        tests/TestInputBackend.cpp
+    )
+
+    target_include_directories(
+        InputPlayCoreTests
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+
+    target_link_libraries(
+        InputPlayCoreTests
+        PRIVATE
+        InputPlayCore
+    )
+
+    add_test(
+        NAME InputPlayCoreTests
+        COMMAND InputPlayCoreTests
+    )
+
+    if(MINGW)
+        target_link_options(
+            InputPlayCoreTests
+            PRIVATE
+            -static
+            -static-libgcc
+            -static-libstdc++
+        )
+    endif()
+endif()
+
 target_link_libraries(
     InputPlay
     PRIVATE
