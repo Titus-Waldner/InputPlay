@@ -10,11 +10,13 @@
 #include "RecordingValidator.h"
 #include "TestInputBackend.h"
 
+#include <chrono>
+#include <filesystem>
+#include <functional>
 #include <iostream>
 #include <string>
-#include <filesystem>
+#include <thread>
 #include <vector>
-#include <functional>
 
 namespace
 {
@@ -119,6 +121,51 @@ std::filesystem::path createPlaybackTestFile()
     expect(
         saved,
         "Playback test recording saves successfully");
+
+    return filePath;
+}
+
+std::filesystem::path createSlowPlaybackTestFile(
+    const std::string& fileName,
+    std::uint64_t finalTimestampMicroseconds)
+{
+    const std::filesystem::path filePath =
+        std::filesystem::current_path()
+        / fileName;
+
+    Recording recording;
+
+    InputEvent firstEvent;
+    firstEvent.timestampMicroseconds = 0;
+    firstEvent.type = EventType::MouseMove;
+    firstEvent.mouseDeltaX = 1;
+    firstEvent.mouseDeltaY = 1;
+
+    recording.addEvent(firstEvent);
+
+    InputEvent delayedEvent;
+    delayedEvent.timestampMicroseconds =
+        finalTimestampMicroseconds;
+
+    delayedEvent.type =
+        EventType::MouseMove;
+
+    delayedEvent.mouseDeltaX = 2;
+    delayedEvent.mouseDeltaY = 2;
+
+    recording.addEvent(delayedEvent);
+
+    std::string errorMessage;
+
+    const bool saved =
+        RecordingFile::save(
+            recording,
+            filePath.string(),
+            errorMessage);
+
+    expect(
+        saved,
+        "Slow playback test recording saves successfully");
 
     return filePath;
 }
@@ -475,6 +522,260 @@ void testPlaybackCancellation()
     std::filesystem::remove(filePath);
 }
 
+void testPlaybackTimeout()
+{
+    const std::filesystem::path filePath =
+        createSlowPlaybackTestFile(
+            "inputplay-core-timeout-test.irec",
+            2'000'000);
+
+    TestInputBackend backend;
+    PlaybackController controller;
+
+    PlaybackOptions options;
+    options.startImmediately = true;
+    options.ignoreDisplay = true;
+    options.loopCount = 1;
+    options.timeoutEnabled = true;
+    options.timeoutSeconds = 1;
+
+    Settings settings;
+
+    PlaybackProgressCollector collector;
+
+    PlaybackCallbacks callbacks;
+    callbacks.onProgress =
+        std::ref(collector);
+
+    const auto testStart =
+        std::chrono::steady_clock::now();
+
+    const PlaybackResult result =
+        runPlayback(
+            filePath.string(),
+            backend,
+            settings,
+            options,
+            controller,
+            callbacks);
+
+    const auto elapsed =
+        std::chrono::duration_cast<
+            std::chrono::milliseconds>(
+            std::chrono::steady_clock::now()
+            - testStart);
+
+    expect(
+        result.code
+            == PlaybackResultCode::TimedOut,
+        "Playback times out while waiting for a future event");
+
+    expect(
+        collector.containsState(
+            PlaybackState::TimedOut),
+        "Timed-out playback reports timed-out state");
+
+    expect(
+        result.completedLoops == 0,
+        "Timed-out playback does not complete the loop");
+
+    expect(
+        result.completedEvents == 1,
+        "Timed-out playback counts events completed before timeout");
+
+    expect(
+        backend.executedEvents().size() == 1,
+        "Timed-out playback does not execute the delayed event");
+
+    expect(
+        backend.releaseCount() >= 1,
+        "Timed-out playback releases backend inputs");
+
+    expect(
+        elapsed.count() >= 900,
+        "Playback timeout waits approximately one second");
+
+    expect(
+        elapsed.count() < 1800,
+        "Playback timeout does not wait for delayed event");
+
+    std::filesystem::remove(filePath);
+}
+
+void testAsynchronousPlaybackCancellation()
+{
+    const std::filesystem::path filePath =
+        createSlowPlaybackTestFile(
+            "inputplay-core-async-cancel-test.irec",
+            5'000'000);
+
+    TestInputBackend backend;
+    PlaybackController controller;
+
+    PlaybackOptions options;
+    options.startImmediately = true;
+    options.ignoreDisplay = true;
+    options.loopCount = 1;
+
+    Settings settings;
+
+    PlaybackProgressCollector collector;
+
+    PlaybackCallbacks callbacks;
+    callbacks.onProgress =
+        std::ref(collector);
+
+    std::thread cancellationThread(
+        [&controller]()
+        {
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(50));
+
+            controller.requestCancel();
+        });
+
+    const auto testStart =
+        std::chrono::steady_clock::now();
+
+    const PlaybackResult result =
+        runPlayback(
+            filePath.string(),
+            backend,
+            settings,
+            options,
+            controller,
+            callbacks);
+
+    cancellationThread.join();
+
+    const auto elapsed =
+        std::chrono::duration_cast<
+            std::chrono::milliseconds>(
+            std::chrono::steady_clock::now()
+            - testStart);
+
+    expect(
+        result.code
+            == PlaybackResultCode::Cancelled,
+        "Playback accepts cancellation from another thread");
+
+    expect(
+        controller.cancellationRequested(),
+        "Asynchronous cancellation updates controller state");
+
+    expect(
+        collector.containsState(
+            PlaybackState::Cancelled),
+        "Asynchronous cancellation reports cancelled state");
+
+    expect(
+        result.completedLoops == 0,
+        "Asynchronous cancellation stops before loop completion");
+
+    expect(
+        result.completedEvents == 1,
+        "Asynchronous cancellation preserves completed-event count");
+
+    expect(
+        backend.executedEvents().size() == 1,
+        "Asynchronous cancellation prevents delayed event execution");
+
+    expect(
+        backend.releaseCount() >= 1,
+        "Asynchronously cancelled playback releases inputs");
+
+    expect(
+        elapsed.count() < 1000,
+        "Asynchronous cancellation interrupts playback promptly");
+
+    std::filesystem::remove(filePath);
+}
+
+void testAsynchronousPlaybackPauseResume()
+{
+    const std::filesystem::path filePath =
+        createSlowPlaybackTestFile(
+            "inputplay-core-async-pause-test.irec",
+            200'000);
+
+    TestInputBackend backend;
+    PlaybackController controller;
+
+    PlaybackOptions options;
+    options.startImmediately = true;
+    options.ignoreDisplay = true;
+    options.loopCount = 1;
+
+    Settings settings;
+
+    PlaybackProgressCollector collector;
+
+    PlaybackCallbacks callbacks;
+    callbacks.onProgress =
+        std::ref(collector);
+
+    std::thread controlThread(
+        [&controller]()
+        {
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(50));
+
+            controller.requestPause();
+
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(200));
+
+            controller.requestResume();
+        });
+
+    const auto testStart =
+        std::chrono::steady_clock::now();
+
+    const PlaybackResult result =
+        runPlayback(
+            filePath.string(),
+            backend,
+            settings,
+            options,
+            controller,
+            callbacks);
+
+    controlThread.join();
+
+    const auto elapsed =
+        std::chrono::duration_cast<
+            std::chrono::milliseconds>(
+            std::chrono::steady_clock::now()
+            - testStart);
+
+    expect(
+        result.code
+            == PlaybackResultCode::Completed,
+        "Playback completes after asynchronous pause and resume");
+
+    expect(
+        result.completedLoops == 1,
+        "Pause and resume preserve loop completion");
+
+    expect(
+        result.completedEvents == 2,
+        "Pause and resume preserve event completion");
+
+    expect(
+        backend.executedEvents().size() == 2,
+        "Pause and resume execute all events");
+
+    expect(
+        elapsed.count() >= 350,
+        "Paused duration is added to playback timing");
+
+    expect(
+        elapsed.count() < 1000,
+        "Playback resumes without excessive delay");
+
+    std::filesystem::remove(filePath);
+}
+
 }
 
 int main()
@@ -488,6 +789,9 @@ int main()
     testMultiplePlaybackLoops();
     testPlaybackBackendFailure();
     testPlaybackCancellation();
+    testPlaybackTimeout();
+    testAsynchronousPlaybackCancellation();
+    testAsynchronousPlaybackPauseResume();
 
     std::cout << '\n';
 
