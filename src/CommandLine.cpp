@@ -10,6 +10,8 @@
 #include "PlaybackOptions.h"
 #include "PlaybackEngine.h"
 #include "CommandLine.h"
+#include "RecordingSummary.h"
+
 
 #include <limits>
 #include <iomanip>
@@ -191,7 +193,8 @@ int runRecordCommand(
 
     return ExitCode::Success;
 }
-int runInfoCommand(const std::string& filePath)
+int runInfoCommand(
+    const std::string& filePath)
 {
     Recording recording;
     std::string errorMessage;
@@ -209,63 +212,12 @@ int runInfoCommand(const std::string& filePath)
         return ExitCode::RecordingLoadFailure;
     }
 
-    std::size_t mouseMoveCount = 0;
-    std::size_t mouseTeleportCount = 0;
-    std::size_t mouseButtonCount = 0;
-    std::size_t mouseWheelCount = 0;
-    std::size_t keyboardCount = 0;
-    std::size_t waitCount = 0;
-
-    std::uint64_t durationMicroseconds = 0;
-    std::uint64_t explicitWaitMicroseconds = 0;
-
-    for (const InputEvent& event : recording.events())
-    {
-        if (event.timestampMicroseconds
-            > durationMicroseconds)
-        {
-            durationMicroseconds =
-                event.timestampMicroseconds;
-        }
-
-        switch (event.type)
-        {
-            case EventType::MouseMove:
-                ++mouseMoveCount;
-                break;
-
-            case EventType::MouseTeleport:
-                ++mouseTeleportCount;
-                break;
-
-            case EventType::MouseButtonDown:
-            case EventType::MouseButtonUp:
-                ++mouseButtonCount;
-                break;
-
-            case EventType::MouseWheel:
-                ++mouseWheelCount;
-                break;
-
-            case EventType::KeyDown:
-            case EventType::KeyUp:
-                ++keyboardCount;
-                break;
-
-            case EventType::Wait:
-                ++waitCount;
-
-                explicitWaitMicroseconds +=
-                    event.waitMicroseconds;
-
-                break;
-        }
-    }
+    const RecordingSummary summary =
+        summarizeRecording(recording);
 
     const double durationSeconds =
         static_cast<double>(
-            durationMicroseconds
-            + explicitWaitMicroseconds)
+            summary.totalDurationMicroseconds)
         / 1'000'000.0;
 
     std::cout
@@ -278,7 +230,7 @@ int runInfoCommand(const std::string& filePath)
 
     std::cout
         << "Events:                "
-        << recording.eventCount()
+        << summary.totalEvents
         << '\n';
 
     std::cout
@@ -369,32 +321,32 @@ int runInfoCommand(const std::string& filePath)
 
     std::cout
         << "Mouse movements:       "
-        << mouseMoveCount
+        << summary.mouseMovements
         << '\n';
 
     std::cout
         << "Mouse teleports:       "
-        << mouseTeleportCount
+        << summary.mouseTeleports
         << '\n';
 
     std::cout
         << "Mouse button events:   "
-        << mouseButtonCount
+        << summary.mouseButtonEvents
         << '\n';
 
     std::cout
         << "Mouse wheel events:    "
-        << mouseWheelCount
+        << summary.mouseWheelEvents
         << '\n';
 
     std::cout
         << "Keyboard events:       "
-        << keyboardCount
+        << summary.keyboardEvents
         << '\n';
 
     std::cout
         << "Wait events:           "
-        << waitCount
+        << summary.waitEvents
         << '\n';
 
     if (!recording.hasDisplayMetadata())
@@ -430,7 +382,8 @@ int runInfoCommand(const std::string& filePath)
             currentDisplay,
             compatibilityMessage);
 
-    std::cout << "\nDisplay compatibility: ";
+    std::cout
+        << "\nDisplay compatibility: ";
 
     switch (compatibility)
     {
@@ -439,7 +392,9 @@ int runInfoCommand(const std::string& filePath)
             break;
 
         case DisplayCompatibility::CompatibleWithWarnings:
-            std::cout << "Compatible with warnings\n";
+            std::cout
+                << "Compatible with warnings\n";
+
             break;
 
         case DisplayCompatibility::Incompatible:
