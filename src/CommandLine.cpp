@@ -16,6 +16,7 @@
 #include "RecordingOptions.h"
 #include "RecordingResult.h"
 #include "RecordingController.h"
+#include "RecordingProgress.h"
 
 #include <limits>
 #include <iomanip>
@@ -159,6 +160,109 @@ Recording createSampleRecording()
     return recording;
 }
 
+void printRecordingProgress(
+    const RecordingProgress& progress,
+    const RecordingOptions& options)
+{
+    switch (progress.state)
+    {
+        case RecordingState::Preparing:
+            break;
+
+        case RecordingState::Armed:
+            std::cout
+                << "Recording armed\n";
+
+            std::cout
+                << "Press "
+                << keyNameFromVirtualKey(options.startKey)
+                << " to start recording\n";
+
+            std::cout
+                << "Press "
+                << keyNameFromVirtualKey(options.stopKey)
+                << " to cancel before recording starts\n";
+
+            break;
+
+        case RecordingState::Recording:
+            if (progress.message
+                == "Recording started.")
+            {
+                std::cout
+                    << "Recording started\n";
+
+                std::cout
+                    << "Press "
+                    << keyNameFromVirtualKey(options.pauseKey)
+                    << " to pause or resume\n";
+
+                std::cout
+                    << "Press "
+                    << keyNameFromVirtualKey(options.stopKey)
+                    << " to stop and save\n";
+            }
+            else if (progress.message
+                     == "Recording resumed.")
+            {
+                std::cout
+                    << "Recording resumed\n";
+            }
+
+            // Periodic progress updates remain quiet in the CLI.
+            // A Qt interface can use eventCount and
+            // elapsedMicroseconds to update its display.
+            break;
+
+        case RecordingState::Paused:
+            std::cout
+                << "Recording paused\n";
+
+            std::cout
+                << "Press "
+                << keyNameFromVirtualKey(options.pauseKey)
+                << " to resume or "
+                << keyNameFromVirtualKey(options.stopKey)
+                << " to stop and save\n";
+
+            break;
+
+        case RecordingState::Completed:
+            // runRecordCommand prints "Recording saved" only
+            // after the recording file is saved successfully.
+            break;
+
+        case RecordingState::Cancelled:
+            // runRecordCommand prints the final cancellation result.
+            break;
+
+        case RecordingState::Failed:
+            // runRecordCommand prints the final failure result.
+            break;
+    }
+}
+
+class RecordingProgressPrinter
+{
+public:
+    explicit RecordingProgressPrinter(
+        const RecordingOptions& options)
+        : options_(options)
+    {
+    }
+
+    void operator()(
+        const RecordingProgress& progress) const
+    {
+        printRecordingProgress(
+            progress,
+            options_);
+    }
+
+private:
+    const RecordingOptions& options_;
+};
+
 int runRecordCommand(
     const std::string& filePath,
     const Settings& settings)
@@ -177,37 +281,45 @@ int runRecordCommand(
     options.stopKey =
         settings.recordStopKey;
 
-    options.waitForStartKey = true;
-    options.captureMouse = true;
-    options.captureKeyboard = true;
+	options.waitForStartKey = true;
+	options.captureMouse = true;
+	options.captureKeyboard = true;
 
 	RecordingController controller;
+
+	RecordingProgressPrinter progressPrinter(
+		options);
+
+	RecordingCallbacks callbacks;
+	callbacks.onProgress =
+		progressPrinter;
 
 	const RecordingResult recordingResult =
 		recorder.record(
 			recording,
 			options,
-			controller);
-			
-    switch (recordingResult.code)
-    {
-        case RecordingResultCode::Cancelled:
-            std::cout
-                << "Recording cancelled\n";
+			controller,
+			callbacks);
 
-            return ExitCode::Cancelled;
+	switch (recordingResult.code)
+	{
+		case RecordingResultCode::Cancelled:
+			std::cout
+				<< "Recording cancelled\n";
 
-        case RecordingResultCode::Failed:
-            std::cerr
-                << "Recording failed: "
-                << recordingResult.message
-                << '\n';
+			return ExitCode::Cancelled;
 
-            return ExitCode::GeneralFailure;
+		case RecordingResultCode::Failed:
+			std::cerr
+				<< "Recording failed: "
+				<< recordingResult.message
+				<< '\n';
 
-        case RecordingResultCode::Completed:
-            break;
-    }
+			return ExitCode::GeneralFailure;
+
+		case RecordingResultCode::Completed:
+			break;
+	}
 
     std::string errorMessage;
 

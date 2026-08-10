@@ -3,6 +3,7 @@
 #include "Recording.h"
 #include "RecordingController.h"
 #include "RecordingOptions.h"
+#include "RecordingProgress.h"
 #include "RecordingResult.h"
 
 class InputRecorder
@@ -11,5 +12,6 @@ public:
     RecordingResult record(
         Recording& recording,
         const RecordingOptions& options,
-        RecordingController& controller);
+        RecordingController& controller,
+        const RecordingCallbacks& callbacks);
 };

@@ -1,13 +1,11 @@
 #include "InputRecorder.h"
 #include "DisplayMetadata.h"
-#include "Settings.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 #include <chrono>
 #include <cstdint>
-#include <iostream>
 #include <string>
 
 namespace
@@ -233,6 +231,33 @@ void processRawKeyboardInput(const RAWKEYBOARD& keyboard)
     activeRecording->addEvent(event);
 }
 
+void reportRecordingProgress(
+    const RecordingCallbacks& callbacks,
+    RecordingState state,
+    const Recording& recording,
+    std::uint64_t elapsedMicroseconds,
+    const std::string& message)
+{
+    if (!callbacks.onProgress)
+    {
+        return;
+    }
+
+    RecordingProgress progress;
+
+    progress.state = state;
+    progress.eventCount =
+        recording.eventCount();
+
+    progress.elapsedMicroseconds =
+        elapsedMicroseconds;
+
+    progress.message =
+        message;
+
+    callbacks.onProgress(progress);
+}
+
 RecordingResult makeRecordingResult(
     RecordingResultCode code,
     const std::string& message,
@@ -325,8 +350,16 @@ LRESULT CALLBACK recorderWindowProcedure(
 RecordingResult InputRecorder::record(
     Recording& recording,
     const RecordingOptions& options,
-    RecordingController& controller)
+    RecordingController& controller,
+    const RecordingCallbacks& callbacks)
 {
+    reportRecordingProgress(
+        callbacks,
+        RecordingState::Preparing,
+        recording,
+        0,
+        "Preparing recording.");
+
     const HINSTANCE instanceHandle =
         GetModuleHandle(nullptr);
 
@@ -344,9 +377,19 @@ RecordingResult InputRecorder::record(
 
 		if (error != ERROR_CLASS_ALREADY_EXISTS)
 		{
+			const std::string message =
+				"Unable to register the recording window.";
+
+			reportRecordingProgress(
+				callbacks,
+				RecordingState::Failed,
+				recording,
+				0,
+				message);
+
 			return makeRecordingResult(
 				RecordingResultCode::Failed,
-				"Unable to register the recording window.",
+				message,
 				recording);
 		}
 			}
@@ -367,9 +410,19 @@ RecordingResult InputRecorder::record(
 
 		if (window == nullptr)
 		{
+			const std::string message =
+				"Unable to create the recording window.";
+
+			reportRecordingProgress(
+				callbacks,
+				RecordingState::Failed,
+				recording,
+				0,
+				message);
+
 			return makeRecordingResult(
 				RecordingResultCode::Failed,
-				"Unable to create the recording window.",
+				message,
 				recording);
 		}
 
@@ -386,18 +439,27 @@ RecordingResult InputRecorder::record(
 	inputDevices[1].hwndTarget = window;
 
 	if (!RegisterRawInputDevices(
-		inputDevices,
-		2,
-		sizeof(RAWINPUTDEVICE)))
+			inputDevices,
+			2,
+			sizeof(RAWINPUTDEVICE)))
 	{
 		DestroyWindow(window);
 
+		const std::string message =
+			"Unable to register for raw mouse and keyboard input.";
+
+		reportRecordingProgress(
+			callbacks,
+			RecordingState::Failed,
+			recording,
+			0,
+			message);
+
 		return makeRecordingResult(
 			RecordingResultCode::Failed,
-			"Unable to register for raw mouse and keyboard input.",
+			message,
 			recording);
 	}
-	
 	recording.clear();
 
 	recordStartKey = options.startKey;
@@ -419,12 +481,21 @@ RecordingResult InputRecorder::record(
 		activeRecording = nullptr;
 		DestroyWindow(window);
 
+		const std::string message =
+			"At least one input category must be enabled.";
+
+		reportRecordingProgress(
+			callbacks,
+			RecordingState::Failed,
+			recording,
+			0,
+			message);
+
 		return makeRecordingResult(
 			RecordingResultCode::Failed,
-			"At least one input category must be enabled.",
+			message,
 			recording);
 	}
-
 	activeRecording = &recording;
 
 	MSG message{};
@@ -437,18 +508,12 @@ RecordingResult InputRecorder::record(
 
 	if (options.waitForStartKey)
 	{
-		std::cout << "Recording armed\n";
-
-		std::cout
-			<< "Press "
-			<< keyNameFromVirtualKey(recordStartKey)
-			<< " to start recording\n";
-
-		std::cout
-			<< "Press "
-			<< keyNameFromVirtualKey(recordStopKey)
-			<< " to cancel before recording starts\n";
-
+		reportRecordingProgress(
+			callbacks,
+			RecordingState::Armed,
+			recording,
+			0,
+			"Recording armed.");
 
 		bool startKeyWasDown =
 			(GetAsyncKeyState(recordStartKey)
@@ -540,9 +605,19 @@ RecordingResult InputRecorder::record(
 			Sleep(1);
 		}
 
+		const std::string message =
+			"Recording was cancelled before it started.";
+
+		reportRecordingProgress(
+			callbacks,
+			RecordingState::Cancelled,
+			recording,
+			0,
+			message);
+
 		return makeRecordingResult(
 			RecordingResultCode::Cancelled,
-			"Recording was cancelled before it started.",
+			message,
 			recording);
 	}
 
@@ -565,10 +640,20 @@ RecordingResult InputRecorder::record(
 		activeRecording = nullptr;
 		DestroyWindow(window);
 
+		const std::string message =
+			"Unable to capture display configuration: "
+			+ displayError;
+
+		reportRecordingProgress(
+			callbacks,
+			RecordingState::Failed,
+			recording,
+			0,
+			message);
+
 		return makeRecordingResult(
 			RecordingResultCode::Failed,
-			"Unable to capture display configuration: "
-				+ displayError,
+			message,
 			recording);
 	}
 
@@ -581,16 +666,15 @@ RecordingResult InputRecorder::record(
 
 	recordingPaused = false;
 
-	std::cout << "Recording started\n";
-	std::cout
-		<< "Press "
-		<< keyNameFromVirtualKey(recordPauseKey)
-		<< " to pause or resume\n";
+	reportRecordingProgress(
+		callbacks,
+		RecordingState::Recording,
+		recording,
+		0,
+		"Recording started.");
 
-	std::cout
-		<< "Press "
-		<< keyNameFromVirtualKey(recordStopKey)
-		<< " to stop and save\n";
+	RecordingClock::time_point nextProgressReport =
+    RecordingClock::now();
 
 	bool recordingActive = true;
 
@@ -659,15 +743,13 @@ RecordingResult InputRecorder::record(
 			recordingPaused = true;
 			pauseStart = RecordingClock::now();
 
-			std::cout
-				<< "Recording paused\n";
+			reportRecordingProgress(
+				callbacks,
+				RecordingState::Paused,
+				recording,
+				currentTimestampMicroseconds(),
+				"Recording paused.");
 
-			std::cout
-				<< "Press "
-				<< keyNameFromVirtualKey(recordPauseKey)
-				<< " to resume or "
-				<< keyNameFromVirtualKey(recordStopKey)
-				<< " to stop and save\n";
 		}
 		else if (!shouldBePaused && recordingPaused)
 		{
@@ -701,11 +783,34 @@ RecordingResult InputRecorder::record(
 					teleportEvent);
 			}
 
-			std::cout
-				<< "Recording resumed\n";
+			reportRecordingProgress(
+				callbacks,
+				RecordingState::Recording,
+				recording,
+				currentTimestampMicroseconds(),
+				"Recording resumed.");
 		}
 
-		pauseKeyWasDown = pauseKeyIsDown;
+		pauseKeyWasDown =
+			pauseKeyIsDown;
+
+		const RecordingClock::time_point progressNow =
+			RecordingClock::now();
+
+		if (!recordingPaused
+			&& progressNow >= nextProgressReport)
+		{
+			reportRecordingProgress(
+				callbacks,
+				RecordingState::Recording,
+				recording,
+				currentTimestampMicroseconds(),
+				"Recording progress.");
+
+			nextProgressReport =
+				progressNow
+				+ std::chrono::milliseconds(50);
+		}
 
 		Sleep(1);
 		
@@ -732,14 +837,36 @@ RecordingResult InputRecorder::record(
 
 	if (controller.cancellationRequested())
 	{
+		reportRecordingProgress(
+			callbacks,
+			RecordingState::Cancelled,
+			recording,
+			recording.empty()
+				? 0
+				: recording.events()
+					.back()
+					.timestampMicroseconds,
+			"Recording cancelled.");
+
 		return makeRecordingResult(
 			RecordingResultCode::Cancelled,
 			"Recording cancelled.",
 			recording);
 	}
 
+	reportRecordingProgress(
+		callbacks,
+		RecordingState::Completed,
+		recording,
+		recording.empty()
+			? 0
+			: recording.events()
+				.back()
+				.timestampMicroseconds,
+		"Recording completed.");
+
 	return makeRecordingResult(
 		RecordingResultCode::Completed,
 		"Recording completed.",
 		recording);
-	}
+}
