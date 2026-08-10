@@ -2,7 +2,6 @@
 
 #include "CancellationSession.h"
 #include "DisplayMetadata.h"
-#include "ExitCodes.h"
 #include "Recording.h"
 #include "RecordingFile.h"
 
@@ -196,9 +195,25 @@ bool checkDisplayCompatibility(
 
     return false;
 }
+
+PlaybackResult makePlaybackResult(
+    PlaybackResultCode code,
+    const std::string& message,
+    unsigned int completedLoops,
+    std::size_t completedEvents)
+{
+    PlaybackResult result;
+
+    result.code = code;
+    result.message = message;
+    result.completedLoops = completedLoops;
+    result.completedEvents = completedEvents;
+
+    return result;
+}
 }
 
-int runPlayback(
+PlaybackResult runPlayback(
     const std::string& filePath,
     IInputBackend& backend,
     const Settings& settings,
@@ -220,7 +235,11 @@ int runPlayback(
                 << errorMessage
                 << '\n';
 
-            return ExitCode::GeneralFailure;
+            return makePlaybackResult(
+				PlaybackResultCode::InternalError,
+				errorMessage,
+				0,
+				0);
         }
 
         std::cout
@@ -230,74 +249,98 @@ int runPlayback(
     }
 
     if (!RecordingFile::load(
-            filePath,
-            recording,
-            errorMessage))
-    {
-        std::cerr
-            << "Unable to load recording: "
-            << errorMessage
-            << '\n';
+        filePath,
+        recording,
+        errorMessage))
+	{
+		std::cerr
+			<< "Unable to load recording: "
+			<< errorMessage
+			<< '\n';
 
-        return ExitCode::RecordingLoadFailure;
-    }
+		return makePlaybackResult(
+			PlaybackResultCode::RecordingLoadFailed,
+			errorMessage,
+			0,
+			0);
+	}
 
     if (recording.empty())
-    {
-        std::cout
-            << "Recording contains no events\n";
+	{
+		std::cout
+			<< "Recording contains no events\n";
 
-        return ExitCode::Success;
-    }
+		return makePlaybackResult(
+			PlaybackResultCode::Completed,
+			"Recording contains no events.",
+			0,
+			0);
+	}
+
 
     if (!checkDisplayCompatibility(
-            recording,
-            options.strictDisplay,
-            options.ignoreDisplay,
-            errorMessage))
-    {
-        std::cerr
-            << "Display validation failed: "
-            << errorMessage
-            << '\n';
+        recording,
+        options.strictDisplay,
+        options.ignoreDisplay,
+        errorMessage))
+	{
+		std::cerr
+			<< "Display validation failed: "
+			<< errorMessage
+			<< '\n';
 
-        return ExitCode::DisplayIncompatible;
-    }
+		return makePlaybackResult(
+			PlaybackResultCode::DisplayIncompatible,
+			errorMessage,
+			0,
+			0);
+	}
 
     if (options.alignStart
-        && !recording.hasStartingCursorPosition())
-    {
-        std::cerr
-            << "Recording does not contain a "
-            << "starting cursor position\n";
+    && !recording.hasStartingCursorPosition())
+	{
+		const std::string message =
+			"Recording does not contain a starting cursor position.";
 
-        return ExitCode::GeneralFailure;
-    }
+		std::cerr
+			<< message
+			<< '\n';
+
+		return makePlaybackResult(
+			PlaybackResultCode::InternalError,
+			message,
+			0,
+			0);
+	}
 
     const CancellationSession* sessionPointer =
         options.sessionName.empty()
         ? nullptr
         : &cancellationSession;
 
-    if (!options.startImmediately)
-    {
-        if (!waitForPlaybackStart(
-                settings,
-                sessionPointer))
-        {
-            backend.releaseAll();
+	if (!options.startImmediately)
+	{
+		if (!waitForPlaybackStart(
+				settings,
+				sessionPointer))
+		{
+			backend.releaseAll();
 
-            std::cout
-                << "Playback cancelled before start\n";
+			std::cout
+				<< "Playback cancelled before start\n";
 
-            return ExitCode::Cancelled;
-        }
-    }
-    else
-    {
-        std::cout
-            << "Playback starting immediately\n";
-    }
+			return makePlaybackResult(
+				PlaybackResultCode::Cancelled,
+				"Playback cancelled before start.",
+				0,
+				0);
+		}
+	}
+	else
+	{
+		std::cout
+			<< "Playback starting immediately\n";
+	}
 
     std::cout
         << "Playback controls: "
@@ -340,8 +383,10 @@ int runPlayback(
     }
 
     unsigned int completedLoops = 0;
-    bool cancelled = false;
-    bool timedOut = false;
+	std::size_t completedEvents = 0;
+
+	bool cancelled = false;
+	bool timedOut = false;
 
     while (options.infiniteLoops
            || completedLoops < options.loopCount)
@@ -363,16 +408,24 @@ int runPlayback(
         if (options.alignStart)
         {
             if (!SetCursorPos(
-                    recording.startingCursorX(),
-                    recording.startingCursorY()))
-            {
-                backend.releaseAll();
+				recording.startingCursorX(),
+				recording.startingCursorY()))
+			{
+				backend.releaseAll();
 
-                std::cerr
-                    << "Windows was unable to align the cursor\n";
+				const std::string message =
+					"Windows was unable to align the cursor.";
 
-                return ExitCode::GeneralFailure;
-            }
+				std::cerr
+					<< message
+					<< '\n';
+
+				return makePlaybackResult(
+					PlaybackResultCode::InternalError,
+					message,
+					completedLoops,
+					completedEvents);
+			}
 
             std::cout
                 << "Cursor aligned to "
@@ -498,26 +551,33 @@ int runPlayback(
             }
 
             if (event.type == EventType::Wait)
-            {
-                addedWaitMicroseconds +=
-                    event.waitMicroseconds;
+			{
+				addedWaitMicroseconds +=
+					event.waitMicroseconds;
 
-                continue;
-            }
+				++completedEvents;
+				continue;
+			}
 
             if (!backend.execute(
-                    event,
-                    errorMessage))
-            {
-                backend.releaseAll();
+				event,
+				errorMessage))
+			{
+				backend.releaseAll();
 
-                std::cerr
-                    << "Playback failed: "
-                    << errorMessage
-                    << '\n';
+				std::cerr
+					<< "Playback failed: "
+					<< errorMessage
+					<< '\n';
 
-                return ExitCode::GeneralFailure;
-            }
+				return makePlaybackResult(
+					PlaybackResultCode::BackendFailed,
+					errorMessage,
+					completedLoops,
+					completedEvents);
+			}
+
+			++completedEvents;
         }
 
         backend.releaseAll();
@@ -538,23 +598,35 @@ int runPlayback(
     backend.releaseAll();
 
     if (timedOut)
-    {
-        std::cout
-            << "Playback timed out\n";
+	{
+		std::cout
+			<< "Playback timed out\n";
 
-        return ExitCode::Timeout;
-    }
+		return makePlaybackResult(
+			PlaybackResultCode::TimedOut,
+			"Playback timed out.",
+			completedLoops,
+			completedEvents);
+	}
 
-    if (cancelled)
-    {
-        std::cout
-            << "Playback cancelled\n";
+	if (cancelled)
+	{
+		std::cout
+			<< "Playback cancelled\n";
 
-        return ExitCode::Cancelled;
-    }
+		return makePlaybackResult(
+			PlaybackResultCode::Cancelled,
+			"Playback cancelled.",
+			completedLoops,
+			completedEvents);
+	}
 
-    std::cout
-        << "Playback completed\n";
+	std::cout
+		<< "Playback completed\n";
 
-    return ExitCode::Success;
+	return makePlaybackResult(
+		PlaybackResultCode::Completed,
+		"Playback completed.",
+		completedLoops,
+		completedEvents);
 }

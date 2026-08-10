@@ -524,6 +524,34 @@ int runModelTest()
     return ExitCode::Success;
 }
 
+int playbackResultToExitCode(
+    const PlaybackResult& result)
+{
+    switch (result.code)
+    {
+        case PlaybackResultCode::Completed:
+            return ExitCode::Success;
+
+        case PlaybackResultCode::Cancelled:
+            return ExitCode::Cancelled;
+
+        case PlaybackResultCode::TimedOut:
+            return ExitCode::Timeout;
+
+        case PlaybackResultCode::RecordingLoadFailed:
+            return ExitCode::RecordingLoadFailure;
+
+        case PlaybackResultCode::DisplayIncompatible:
+            return ExitCode::DisplayIncompatible;
+
+        case PlaybackResultCode::BackendFailed:
+        case PlaybackResultCode::InternalError:
+            return ExitCode::GeneralFailure;
+    }
+
+    return ExitCode::GeneralFailure;
+}
+
 int runCancelCommand(
     const std::string& sessionName)
 {
@@ -871,25 +899,32 @@ int runCommandLine(
 
 			SendInputBackend backend;
 
-			return runPlayback(
-				argv[2],
-				backend,
-				settings,
-				options);
+			const PlaybackResult result =
+				runPlayback(
+					argv[2],
+					backend,
+					settings,
+					options);
+
+			return playbackResultToExitCode(result);
 		}
 
 		DryRunBackend backend;
 
-		return runPlayback(
-			argv[2],
-			backend,
-			settings,
-			options);
-	}
+		const PlaybackResult result =
+			runPlayback(
+				argv[2],
+				backend,
+				settings,
+				options);
 
-    std::cerr << "Unknown command: "
-              << command
-              << '\n';
+		return playbackResultToExitCode(result);
+		}
 
-    return ExitCode::InvalidArguments;
+		std::cerr
+			<< "Unknown command: "
+			<< command
+			<< '\n';
+
+		return ExitCode::InvalidArguments;
 }
