@@ -1,2 +1,5 @@
 build/
- *.exe
+build-release/
+package/
+*.exe
+*.zip

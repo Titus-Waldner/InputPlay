@@ -22,3 +22,13 @@ add_executable(
 	src/PlaybackEngine.cpp
 	src/CommandLine.cpp
 )
+
+if(MINGW)
+    target_link_options(
+        InputPlay
+        PRIVATE
+        -static
+        -static-libgcc
+        -static-libstdc++
+    )
+endif()
