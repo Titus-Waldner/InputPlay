@@ -603,9 +603,11 @@ PlaybackResult runPlayback(
             Clock::now();
 
         std::chrono::microseconds pausedDuration{0};
-        std::uint64_t addedWaitMicroseconds = 0;
+		std::uint64_t addedWaitMicroseconds = 0;
 
-        bool pauseKeyWasDown =
+		std::size_t completedEventsInLoop = 0;
+
+		bool pauseKeyWasDown =
             isKeyPressed(settings.playPauseKey);
 
         bool cancelKeyWasDown =
@@ -735,13 +737,30 @@ PlaybackResult runPlayback(
             }
 
             if (event.type == EventType::Wait)
-            {
-                addedWaitMicroseconds +=
-                    event.waitMicroseconds;
+			{
+				addedWaitMicroseconds +=
+					event.waitMicroseconds;
 
-                ++completedEvents;
-                continue;
-            }
+				++completedEvents;
+				++completedEventsInLoop;
+
+				if (completedEventsInLoop % 250 == 0
+					|| completedEventsInLoop
+						== recording.eventCount())
+				{
+					reportPlaybackProgress(
+						callbacks,
+						PlaybackState::Progress,
+						completedLoops + 1,
+						options.loopCount,
+						options.infiniteLoops,
+						completedEventsInLoop,
+						recording.eventCount(),
+						"Playback progress.");
+				}
+
+				continue;
+			}
 
             if (!backend.execute(
                     event,
@@ -762,6 +781,22 @@ PlaybackResult runPlayback(
             }
 
             ++completedEvents;
+			++completedEventsInLoop;
+
+			if (completedEventsInLoop % 250 == 0
+				|| completedEventsInLoop
+					== recording.eventCount())
+			{
+				reportPlaybackProgress(
+					callbacks,
+					PlaybackState::Progress,
+					completedLoops + 1,
+					options.loopCount,
+					options.infiniteLoops,
+					completedEventsInLoop,
+					recording.eventCount(),
+					"Playback progress.");
+			}
         }
 
         backend.releaseAll();
@@ -773,6 +808,16 @@ PlaybackResult runPlayback(
         }
 
         ++completedLoops;
+
+		reportPlaybackProgress(
+			callbacks,
+			PlaybackState::LoopCompleted,
+			completedLoops,
+			options.loopCount,
+			options.infiniteLoops,
+			recording.eventCount(),
+			recording.eventCount(),
+			"Playback loop completed.");
 
         std::cout
             << "Completed loop "
