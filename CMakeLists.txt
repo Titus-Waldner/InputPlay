@@ -26,6 +26,7 @@ add_library(
 	src/SettingsFile.cpp
 	src/RecordingSummary.cpp
 	src/PlaybackController.cpp
+	src/RecordingController.cpp
 	
 )
 

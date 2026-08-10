@@ -15,6 +15,7 @@
 #include "PlaybackController.h"
 #include "RecordingOptions.h"
 #include "RecordingResult.h"
+#include "RecordingController.h"
 
 #include <limits>
 #include <iomanip>
@@ -180,11 +181,14 @@ int runRecordCommand(
     options.captureMouse = true;
     options.captureKeyboard = true;
 
-    const RecordingResult recordingResult =
-        recorder.record(
-            recording,
-            options);
+	RecordingController controller;
 
+	const RecordingResult recordingResult =
+		recorder.record(
+			recording,
+			options,
+			controller);
+			
     switch (recordingResult.code)
     {
         case RecordingResultCode::Cancelled:

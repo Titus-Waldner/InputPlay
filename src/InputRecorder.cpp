@@ -324,7 +324,8 @@ LRESULT CALLBACK recorderWindowProcedure(
 
 RecordingResult InputRecorder::record(
     Recording& recording,
-    const RecordingOptions& options)
+    const RecordingOptions& options,
+    RecordingController& controller)
 {
     const HINSTANCE instanceHandle =
         GetModuleHandle(nullptr);
@@ -475,16 +476,37 @@ RecordingResult InputRecorder::record(
 				(GetAsyncKeyState(recordStopKey)
 					& 0x8000) != 0;
 
+			if (controller.cancellationRequested())
+			{
+				cancelledBeforeStart = true;
+				break;
+			}
+
+			if (controller.stopRequested())
+			{
+				cancelledBeforeStart = true;
+				break;
+			}
+
 			if (stopKeyIsDown
 				&& !stopKeyWasDown)
 			{
+				controller.requestCancel();
 				cancelledBeforeStart = true;
+				break;
+			}
+
+			if (controller.startRequested())
+			{
+				recordingStarted = true;
 				break;
 			}
 
 			if (startKeyIsDown
 				&& !startKeyWasDown)
 			{
+				controller.requestStart();
+
 				while ((GetAsyncKeyState(recordStartKey)
 						& 0x8000) != 0)
 				{
@@ -503,6 +525,7 @@ RecordingResult InputRecorder::record(
 	}
 	else
 	{
+		controller.requestStart();
 		recordingStarted = true;
 	}
 
@@ -590,11 +613,24 @@ RecordingResult InputRecorder::record(
 			DispatchMessage(&message);
 		}
 
+		if (controller.cancellationRequested())
+		{
+			recordingActive = false;
+			break;
+		}
+
+		if (controller.stopRequested())
+		{
+			recordingActive = false;
+			break;
+		}
+
 		const bool stopKeyIsDown =
 			(GetAsyncKeyState(recordStopKey) & 0x8000) != 0;
 
 		if (stopKeyIsDown && !stopKeyWasDown)
 		{
+			controller.requestStop();
 			recordingActive = false;
 		}
 
@@ -610,56 +646,63 @@ RecordingResult InputRecorder::record(
 
 		if (pauseKeyIsDown && !pauseKeyWasDown)
 		{
-			if (!recordingPaused)
+			controller.togglePause();
+		}
+
+		pauseKeyWasDown = pauseKeyIsDown;
+
+		const bool shouldBePaused =
+			controller.paused();
+
+		if (shouldBePaused && !recordingPaused)
+		{
+			recordingPaused = true;
+			pauseStart = RecordingClock::now();
+
+			std::cout
+				<< "Recording paused\n";
+
+			std::cout
+				<< "Press "
+				<< keyNameFromVirtualKey(recordPauseKey)
+				<< " to resume or "
+				<< keyNameFromVirtualKey(recordStopKey)
+				<< " to stop and save\n";
+		}
+		else if (!shouldBePaused && recordingPaused)
+		{
+			const RecordingClock::time_point resumeTime =
+				RecordingClock::now();
+
+			accumulatedPausedTime +=
+				resumeTime - pauseStart;
+
+			recordingPaused = false;
+
+			POINT resumedCursorPosition{};
+
+			if (GetCursorPos(&resumedCursorPosition))
 			{
-				recordingPaused = true;
-				pauseStart = RecordingClock::now();
+				InputEvent teleportEvent;
 
-				std::cout
-					<< "Recording paused\n";
+				teleportEvent.timestampMicroseconds =
+					currentTimestampMicroseconds();
 
-				std::cout
-					<< "Press "
-					<< keyNameFromVirtualKey(recordPauseKey)
-					<< " to resume or "
-					<< keyNameFromVirtualKey(recordStopKey)
-					<< " to stop and save\n";
+				teleportEvent.type =
+					EventType::MouseTeleport;
+
+				teleportEvent.mouseX =
+					resumedCursorPosition.x;
+
+				teleportEvent.mouseY =
+					resumedCursorPosition.y;
+
+				activeRecording->addEvent(
+					teleportEvent);
 			}
-			else
-			{
-				const RecordingClock::time_point resumeTime =
-					RecordingClock::now();
 
-				accumulatedPausedTime +=
-					resumeTime - pauseStart;
-
-				recordingPaused = false;
-
-				POINT resumedCursorPosition{};
-
-				if (GetCursorPos(&resumedCursorPosition))
-				{
-					InputEvent teleportEvent;
-
-					teleportEvent.timestampMicroseconds =
-						currentTimestampMicroseconds();
-
-					teleportEvent.type =
-						EventType::MouseTeleport;
-
-					teleportEvent.mouseX =
-						resumedCursorPosition.x;
-
-					teleportEvent.mouseY =
-						resumedCursorPosition.y;
-
-					activeRecording->addEvent(
-						teleportEvent);
-				}
-
-				std::cout
-					<< "Recording resumed\n";
-			}
+			std::cout
+				<< "Recording resumed\n";
 		}
 
 		pauseKeyWasDown = pauseKeyIsDown;
@@ -682,13 +725,21 @@ RecordingResult InputRecorder::record(
 	DestroyWindow(window);
 
 	while ((GetAsyncKeyState(recordStopKey)
-			& 0x8000) != 0)
+		& 0x8000) != 0)
 	{
 		Sleep(1);
+	}
+
+	if (controller.cancellationRequested())
+	{
+		return makeRecordingResult(
+			RecordingResultCode::Cancelled,
+			"Recording cancelled.",
+			recording);
 	}
 
 	return makeRecordingResult(
 		RecordingResultCode::Completed,
 		"Recording completed.",
 		recording);
-}
+	}
