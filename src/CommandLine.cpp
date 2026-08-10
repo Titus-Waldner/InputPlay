@@ -4,6 +4,7 @@
 #include "SendInputBackend.h"
 #include "InputRecorder.h"
 #include "Settings.h"
+#include "SettingsFile.h"
 #include "RecordingValidator.h"
 #include "ExitCodes.h"
 #include "CancellationSession.h"

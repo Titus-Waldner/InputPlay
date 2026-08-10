@@ -23,7 +23,9 @@ add_library(
     src/RecordingValidator.cpp
     src/SendInputBackend.cpp
     src/Settings.cpp
+	src/SettingsFile.cpp
 	src/RecordingSummary.cpp
+	
 )
 
 target_include_directories(

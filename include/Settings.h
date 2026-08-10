@@ -15,9 +15,5 @@ struct Settings
     unsigned int defaultLoops = 1;
 };
 
-bool loadOrCreateSettings(
-    Settings& settings,
-    std::string& settingsPath,
-    std::string& errorMessage);
-
-std::string keyNameFromVirtualKey(int virtualKey);
+std::string keyNameFromVirtualKey(
+    int virtualKey);
