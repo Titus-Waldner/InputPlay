@@ -1,0 +1,193 @@
+#pragma once
+
+#include "Recording.h"
+#include "Settings.h"
+
+#include <QMainWindow>
+#include <QListView>
+#include <QString>
+#include <memory>
+
+class EventListModel;
+class EventListView;
+class PlaybackWidget;
+class PropertyEditor;
+class MacroInfoPanel;
+class TimelineWidget;
+class PlaybackThread;
+class EventFilterWidget;
+class StatisticsPanel;
+class UndoHistoryPanel;
+class SearchWidget;
+class RecordingWidget;
+class GlobalHotkeyManager;
+class SystemTrayManager;
+class QSplitter;
+class QStackedWidget;
+class QLabel;
+class QToolBar;
+class QAction;
+class QMenu;
+class QUndoStack;
+class QSlider;
+
+class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    explicit MainWindow(QWidget* parent = nullptr);
+    ~MainWindow() override;
+
+    void loadMacro(const QString& filePath);
+
+signals:
+    void macroLoaded(const QString& filePath);
+    void macroModified();
+    void eventSelected(int index);
+
+public slots:
+    void newMacro();
+    void openMacro();
+    void saveMacro();
+    void saveMacroAs();
+    void exportEvents();
+    void openSettings();
+    void showAbout();
+    void showShortcuts();
+    
+    void addEvent();
+    void insertEventBefore();
+    void insertEventAfter();
+    void deleteSelectedEvents();
+    void duplicateEvent(int index);
+    void moveEventUp(int index);
+    void moveEventDown(int index);
+    
+    void copyEvents();
+    void pasteEvents();
+    void goToEvent();
+    void batchTimingOperation();
+    void findEvents();
+    void showDisplayInfo();
+    void toggleColorCodedRows(bool enabled);
+    void toggleStatisticsPanel(bool visible);
+    void toggleUndoHistoryPanel(bool visible);
+    void toggleRecordingPanel(bool visible);
+    
+    // Recording slots
+    void startRecording();
+    void stopRecording();
+    void onRecordingCompleted(bool hasEvents);
+    
+    // Hotkey slots
+    void onRecordStartStopHotkey();
+    void onRecordPauseHotkey();
+    void onPlaybackStartStopHotkey();
+    void onPlaybackPauseHotkey();
+    void onEmergencyStop();
+    
+    void onFilterChanged();
+    void onTimelineZoomChanged(int value);
+
+    void onEventSelectionChanged(int index);
+    void onEventModified(int index, const InputEvent& oldEvent, const InputEvent& newEvent);
+    void onMacroModified();
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
+
+private:
+    void setupUi();
+    void setupMenuBar();
+    void setupToolBar();
+    void setupCentralWidget();
+    void setupStatusBar();
+    void setupConnections();
+    void setupHotkeys();
+    
+    void updateWindowTitle();
+    void updateActionStates();
+    void updateStatusBar();
+    void updateRecentFilesMenu();
+    void addToRecentFiles(const QString& filePath);
+    
+    bool confirmDiscardChanges();
+    bool saveMacroToFile(const QString& filePath);
+    
+    void showEventCreationDialog(int insertPosition);
+
+    // Data
+    std::unique_ptr<Recording> recording_;
+    Settings settings_;
+    QString currentFilePath_;
+    bool modified_ = false;
+
+    // Undo/Redo
+    QUndoStack* undoStack_ = nullptr;
+
+    // UI Components
+    EventListModel* eventModel_ = nullptr;
+    EventListView* eventListView_ = nullptr;
+    PlaybackWidget* playbackWidget_ = nullptr;
+    PropertyEditor* propertyEditor_ = nullptr;
+    MacroInfoPanel* infoPanel_ = nullptr;
+    TimelineWidget* timelineWidget_ = nullptr;
+    PlaybackThread* playbackThread_ = nullptr;
+    EventFilterWidget* filterWidget_ = nullptr;
+    StatisticsPanel* statisticsPanel_ = nullptr;
+    UndoHistoryPanel* undoHistoryPanel_ = nullptr;
+    SearchWidget* searchWidget_ = nullptr;
+    RecordingWidget* recordingWidget_ = nullptr;
+    GlobalHotkeyManager* hotkeyManager_ = nullptr;
+    SystemTrayManager* trayManager_ = nullptr;
+    
+    QSplitter* mainSplitter_ = nullptr;
+    QSplitter* rightSplitter_ = nullptr;
+    QStackedWidget* viewStack_ = nullptr;
+    
+    QToolBar* mainToolBar_ = nullptr;
+    QSlider* zoomSlider_ = nullptr;
+    QLabel* zoomLabel_ = nullptr;
+    QLabel* statusLabel_ = nullptr;
+    QLabel* selectionLabel_ = nullptr;
+    QLabel* coordsLabel_ = nullptr;
+    QLabel* durationLabel_ = nullptr;
+    
+    // Actions
+    QAction* newAction_ = nullptr;
+    QAction* openAction_ = nullptr;
+    QAction* saveAction_ = nullptr;
+    QAction* saveAsAction_ = nullptr;
+    QAction* exportAction_ = nullptr;
+    QMenu* recentFilesMenu_ = nullptr;
+    QAction* clearRecentAction_ = nullptr;
+    QAction* undoAction_ = nullptr;
+    QAction* redoAction_ = nullptr;
+    QAction* copyAction_ = nullptr;
+    QAction* pasteAction_ = nullptr;
+    QAction* addEventAction_ = nullptr;
+    QAction* insertBeforeAction_ = nullptr;
+    QAction* insertAfterAction_ = nullptr;
+    QAction* duplicateAction_ = nullptr;
+    QAction* moveUpAction_ = nullptr;
+    QAction* moveDownAction_ = nullptr;
+    QAction* deleteAction_ = nullptr;
+    QAction* selectAllAction_ = nullptr;
+    QAction* goToAction_ = nullptr;
+    QAction* batchTimingAction_ = nullptr;
+    QAction* findAction_ = nullptr;
+    QAction* displayInfoAction_ = nullptr;
+    QAction* colorCodedRowsAction_ = nullptr;
+    QAction* statisticsPanelAction_ = nullptr;
+    QAction* undoHistoryPanelAction_ = nullptr;
+    QAction* recordingPanelAction_ = nullptr;
+    QAction* recordAction_ = nullptr;
+    QAction* settingsAction_ = nullptr;
+    QAction* listViewAction_ = nullptr;
+    QAction* timelineViewAction_ = nullptr;
+    
+    static constexpr int MaxRecentFiles = 10;
+};
