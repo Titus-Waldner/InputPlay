@@ -11,5 +11,6 @@
         <file>icons/settings.svg</file>
         <file>icons/list.svg</file>
         <file>icons/timeline.svg</file>
+		<file>icons/l33t-r3pl4y.ico</file>
     </qresource>
 </RCC>

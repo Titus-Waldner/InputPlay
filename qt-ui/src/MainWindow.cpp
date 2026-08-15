@@ -28,6 +28,7 @@
 #include "RecordingFile.h"
 #include "SettingsFile.h"
 
+#include <QIcon>
 #include <QSignalBlocker>
 #include <QApplication>
 #include <QMenuBar>
@@ -64,7 +65,10 @@ MainWindow::MainWindow(QWidget* parent)
     , recording_(std::make_unique<Recording>())
     , undoStack_(new QUndoStack(this))
 {
-    setWindowTitle("InputPlay Studio");
+    setWindowTitle("L33T R3PL4Y");
+	setWindowIcon(
+		QIcon(
+			":/icons/l33t-r3pl4y.ico"));
     setMinimumSize(1400, 900);
     resize(1400, 900);
     setAcceptDrops(true);
@@ -431,7 +435,7 @@ void MainWindow::setupMenuBar()
     
     helpMenu->addSeparator();
     
-    QAction* aboutAction = helpMenu->addAction(tr("&About InputPlay Studio"), this, &MainWindow::showAbout);
+    QAction* aboutAction = helpMenu->addAction(tr("&About L33T R3PL4Y"), this, &MainWindow::showAbout);
     
     QAction* aboutQtAction = helpMenu->addAction(tr("About &Qt"), qApp, &QApplication::aboutQt);
 }
@@ -1347,11 +1351,25 @@ void MainWindow::openSettings()
 
 void MainWindow::showAbout()
 {
-    QMessageBox::about(this, tr("About InputPlay Studio"),
-        tr("<h3>InputPlay Studio</h3>"
-           "<p>Version 1.0.0</p>"
-           "<p>A powerful macro recording and playback tool for Windows.</p>"
-           "<p>Built with Qt and InputPlayCore.</p>"));
+    QMessageBox::about(
+        this,
+        tr("About L33T R3PL4Y"),
+        tr(
+            "<h2>L33T R3PL4Y</h2>"
+            "<p><b>Record. Edit. Replay.</b></p>"
+            "<p>Version 1.0.0</p>"
+            "<p>"
+            "A Windows application for recording, editing, "
+            "and replaying mouse and keyboard input macros."
+            "</p>"
+            "<p>"
+            "Features include input recording, event editing, "
+            "finite and infinite playback loops, Dry Run, "
+            "Align Start, global hotkeys, and emergency stop."
+            "</p>"
+            "<p>"
+            "Built with Qt and InputPlayCore."
+            "</p>"));
 }
 
 void MainWindow::showShortcuts()
@@ -1433,7 +1451,7 @@ void MainWindow::onMacroModified()
 
 void MainWindow::updateWindowTitle()
 {
-    QString title = "InputPlay Studio";
+    QString title = "L33T R3PL4Y";
     
     if (!currentFilePath_.isEmpty()) {
         title = QFileInfo(currentFilePath_).fileName() + " - " + title;

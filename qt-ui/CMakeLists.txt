@@ -91,11 +91,23 @@ set(RESOURCES
     resources/resources.qrc
 )
 
+if(WIN32)
+    list(APPEND RESOURCES
+        resources/L33TR3PL4Y.rc
+    )
+endif()
+
 # Create executable
 add_executable(InputPlayStudio
     ${SOURCES}
     ${HEADERS}
     ${RESOURCES}
+)
+
+set_target_properties(
+    InputPlayStudio
+    PROPERTIES
+        OUTPUT_NAME "L33TR3PL4Y"
 )
 
 target_include_directories(InputPlayStudio PRIVATE

@@ -1,145 +1,89 @@
-# InputPlay Studio - Qt Interface
+# L33T R3PL4Y
 
-A modern, dark-mode Qt interface for InputPlay macro recording and playback.
+**Record. Edit. Replay.**
+
+L33T R3PL4Y is a Windows application for recording, editing, and
+replaying mouse and keyboard input macros.
+
+The application is powered by InputPlayCore and uses the portable
+`.irec` macro format.
 
 ## Features
 
-- **Load & View Macros**: Open `.irec` files and view all event details
-- **Event Editing**: Modify, add, insert, and delete events
-- **List View**: Traditional table-based event display with color-coded types
-- **Timeline View**: Visual timeline showing events over time
-- **Playback Controls**: Play, pause, stop with speed control and loop options
-- **Dry-Run Mode**: Safe preview without sending actual input
-- **Property Editor**: Full control over every event property
-- **Settings Dialog**: Configure hotkeys, playback defaults, and appearance
-- **Drag & Drop**: Open files by dropping them onto the window
-- **Display Compatibility**: Check if macro will work on your current display setup
+- Dedicated Playback & Editing and Recording workspaces
+- Mouse and keyboard input recording
+- Recording countdown, pause, resume, stop, and cancellation
+- List and timeline event views
+- Event creation, editing, deletion, duplication, and reordering
+- Undo and redo history
+- Event search and filtering
+- Adjustable playback speed
+- Finite, custom, and infinite playback loops
+- Dry Run mode for safe playback testing
+- Confirmation before real input playback
+- Align Start cursor positioning
+- Display compatibility information
+- System tray integration
+- Global active-workspace hotkeys
+- Dark, gray, and light themes with selectable accent colors
 
-## Requirements
+## Active Workspace Hotkeys
 
-- Qt 6.x (Core, Widgets, Gui modules)
-- CMake 3.20+
-- C++20 compatible compiler (MinGW-w64 or MSVC)
-- InputPlayCore library (built from parent directory)
+The global hotkeys control whichever workspace is currently open.
+
+- **F9** — Start or stop
+- **F10** — Pause or resume
+- **Ctrl+Shift+Escape** — Emergency Stop
+
+Workspace switching is blocked while recording or playback is active,
+keeping the hotkey behavior predictable.
+
+## Playback Safety
+
+### Dry Run
+
+Dry Run simulates playback without sending real mouse or keyboard
+input to Windows.
+
+### Real Playback Confirmation
+
+L33T R3PL4Y can display a confirmation before real input playback
+begins.
+
+### Align Start
+
+Align Start moves the cursor to the position captured at the beginning
+of the recording before replaying the first event.
+
+## Macro Files
+
+L33T R3PL4Y uses the `.irec` macro format.
+
+Macros can be:
+
+- Created through input recording
+- Opened and saved from the File menu
+- Edited event by event
+- Dragged onto the application window
+- Exported as CSV, TSV, or JSON
 
 ## Building
 
-### Prerequisites
+### Requirements
 
-1. Install Qt 6 for Windows
-2. Build InputPlayCore first:
-   ```bash
-   cd /path/to/InputPlay
-   mkdir build && cd build
-   cmake .. -G Ninja
-   cmake --build .
-   ```
+- Windows 10 or Windows 11
+- Qt 6
+- CMake 3.20 or newer
+- Ninja
+- C++20-compatible compiler
+- InputPlayCore built in the parent project directory
 
-### Build Qt UI
+The current development environment uses MSYS2 UCRT64 with MinGW-w64.
 
-```bash
-cd qt-ui
-mkdir build && cd build
-cmake .. -G Ninja -DCMAKE_PREFIX_PATH="C:/Qt/6.x.x/mingw_64"
-cmake --build .
-```
+### Build InputPlayCore
 
-For release build:
-```bash
-cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="C:/Qt/6.x.x/mingw_64"
-cmake --build .
-```
-
-### Run
+From the repository root:
 
 ```bash
-./InputPlayStudio.exe
-
-# Or open a macro directly:
-./InputPlayStudio.exe path/to/macro.irec
-```
-
-## Usage
-
-### Loading a Macro
-
-1. Click **Open** or press `Ctrl+O`
-2. Select a `.irec` file
-3. Events appear in the list view
-
-### Editing Events
-
-- **Select**: Click an event row
-- **Edit**: Use the Property Editor panel on the right
-- **Insert**: Right-click → Insert Event Before/After
-- **Delete**: Select events and press `Delete` or right-click → Delete
-
-### Playback
-
-1. Load a macro
-2. Configure options:
-   - **Dry Run**: On (safe) or Off (sends real input)
-   - **Loops**: 1, 2, 3, 5, 10, custom, or infinite
-   - **Speed**: 25% to 400%
-3. Click **▶ Play**
-
-### Views
-
-- **List View**: Traditional table with columns (Type, Details, Time, Duration)
-- **Timeline View**: Visual representation of events over time
-
-### Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+N` | New macro |
-| `Ctrl+O` | Open macro |
-| `Ctrl+S` | Save macro |
-| `Ctrl+Shift+S` | Save As |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Y` | Redo |
-| `Delete` | Delete selected events |
-| `Ctrl+A` | Select all events |
-| `Space` | Play/Pause toggle |
-
-## Architecture
-
-```
-qt-ui/
-├── CMakeLists.txt
-├── README.md
-├── src/
-│   ├── main.cpp              # Application entry point
-│   ├── MainWindow.h/cpp      # Main application window
-│   ├── EventListModel.h/cpp  # Qt model for event data
-│   ├── EventListView.h/cpp   # Table view for events
-│   ├── TimelineWidget.h/cpp  # Visual timeline widget
-│   ├── PlaybackWidget.h/cpp  # Playback controls
-│   ├── PropertyEditor.h/cpp  # Event property editing
-│   ├── MacroInfoPanel.h/cpp  # Macro information panel
-│   ├── SettingsDialog.h/cpp  # Settings configuration
-│   └── DarkStyle.h/cpp       # Dark theme styling
-└── resources/
-    ├── resources.qrc
-    └── icons/                # SVG icons
-```
-
-## Theme
-
-The interface uses a modern dark blue theme:
-
-- **Background**: #1a1a2e (primary), #16213e (secondary), #0f3460 (tertiary)
-- **Accent**: #00d9ff (cyan), #ff006e (magenta)
-- **Text**: #ffffff (primary), #a0a0b0 (secondary)
-
-Event types are color-coded:
-- 🔵 Mouse Move (cyan)
-- 🔴 Mouse Click (magenta)
-- 🟣 Mouse Wheel (purple)
-- 🟢 Key Events (green)
-- ⚪ Wait Events (gray)
-- 🟡 Teleport (yellow)
-
-## License
-
-Same as InputPlay parent project.
+cmake -S . -B build -G Ninja
+cmake --build build
