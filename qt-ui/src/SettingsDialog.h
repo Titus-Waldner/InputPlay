@@ -54,17 +54,11 @@ private:
     QTabWidget* tabWidget_ = nullptr;
     
     // Recording settings
-    QComboBox* recordStartKeyCombo_ = nullptr;
-    QComboBox* recordPauseKeyCombo_ = nullptr;
-    QComboBox* recordStopKeyCombo_ = nullptr;
     QCheckBox* captureMouseCheck_ = nullptr;
     QCheckBox* captureKeyboardCheck_ = nullptr;
     QCheckBox* captureDisplayCheck_ = nullptr;
     
     // Playback settings
-    QComboBox* playStartKeyCombo_ = nullptr;
-    QComboBox* playPauseKeyCombo_ = nullptr;
-    QComboBox* playCancelKeyCombo_ = nullptr;
     QSpinBox* defaultLoopsSpin_ = nullptr;
 	QPushButton* infiniteLoopsButton_ = nullptr;
 	bool defaultLoopsInfinite_ = false;

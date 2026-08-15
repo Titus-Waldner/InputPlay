@@ -70,39 +70,76 @@ QWidget* SettingsDialog::createRecordingTab()
     QWidget* tab = new QWidget();
     QVBoxLayout* layout = new QVBoxLayout(tab);
     
-    // Hotkeys group
-    QGroupBox* hotkeyGroup = new QGroupBox(tr("Recording Hotkeys"));
-    QFormLayout* hotkeyLayout = new QFormLayout(hotkeyGroup);
-    
-    auto createKeyCombo = [this]() -> QComboBox* {
-        QComboBox* combo = new QComboBox();
-        combo->addItem(tr("F1"), 0x70);
-        combo->addItem(tr("F2"), 0x71);
-        combo->addItem(tr("F3"), 0x72);
-        combo->addItem(tr("F4"), 0x73);
-        combo->addItem(tr("F5"), 0x74);
-        combo->addItem(tr("F6"), 0x75);
-        combo->addItem(tr("F7"), 0x76);
-        combo->addItem(tr("F8"), 0x77);
-        combo->addItem(tr("F9"), 0x78);
-        combo->addItem(tr("F10"), 0x79);
-        combo->addItem(tr("F11"), 0x7A);
-        combo->addItem(tr("F12"), 0x7B);
-        combo->addItem(tr("Pause"), 0x13);
-        combo->addItem(tr("Scroll Lock"), 0x91);
-        combo->addItem(tr("Print Screen"), 0x2C);
-        return combo;
-    };
-    
-    recordStartKeyCombo_ = createKeyCombo();
-    hotkeyLayout->addRow(tr("Start Recording:"), recordStartKeyCombo_);
-    
-    recordPauseKeyCombo_ = createKeyCombo();
-    hotkeyLayout->addRow(tr("Pause/Resume:"), recordPauseKeyCombo_);
-    
-    recordStopKeyCombo_ = createKeyCombo();
-    hotkeyLayout->addRow(tr("Stop Recording:"), recordStopKeyCombo_);
-    
+    // Active-workspace hotkeys.
+	QGroupBox* hotkeyGroup =
+		new QGroupBox(
+			tr("Active Workspace Hotkeys"));
+
+	QFormLayout* hotkeyLayout =
+		new QFormLayout(
+			hotkeyGroup);
+
+	QLabel* startStopHotkeyLabel =
+		new QLabel(
+			tr("F9"),
+			hotkeyGroup);
+
+	startStopHotkeyLabel->setProperty(
+		"bold",
+		true);
+
+	hotkeyLayout->addRow(
+		tr("Start / Stop:"),
+		startStopHotkeyLabel);
+
+	QLabel* pauseResumeHotkeyLabel =
+		new QLabel(
+			tr("F10"),
+			hotkeyGroup);
+
+	pauseResumeHotkeyLabel->setProperty(
+		"bold",
+		true);
+
+	hotkeyLayout->addRow(
+		tr("Pause / Resume:"),
+		pauseResumeHotkeyLabel);
+
+	QLabel* emergencyStopHotkeyLabel =
+		new QLabel(
+			tr("Ctrl+Shift+Escape"),
+			hotkeyGroup);
+
+	emergencyStopHotkeyLabel->setProperty(
+		"bold",
+		true);
+
+	hotkeyLayout->addRow(
+		tr("Emergency Stop:"),
+		emergencyStopHotkeyLabel);
+
+	QLabel* hotkeyExplanationLabel =
+		new QLabel(
+			tr(
+				"F9 and F10 control the active workspace: "
+				"Playback & Editing or Recording."),
+			hotkeyGroup);
+
+	hotkeyExplanationLabel->setWordWrap(
+		true);
+
+	hotkeyExplanationLabel->setProperty(
+		"subheading",
+		true);
+
+	hotkeyLayout->addRow(
+		hotkeyExplanationLabel);
+
+	layout->addWidget(
+		hotkeyGroup);
+		
+	
+	
     layout->addWidget(hotkeyGroup);
     
     // Capture options
@@ -131,165 +168,189 @@ QWidget* SettingsDialog::createRecordingTab()
 
 QWidget* SettingsDialog::createPlaybackTab()
 {
-    QWidget* tab = new QWidget();
-    QVBoxLayout* layout = new QVBoxLayout(tab);
-    
-    // Hotkeys group
-    QGroupBox* hotkeyGroup = new QGroupBox(tr("Playback Hotkeys"));
-    QFormLayout* hotkeyLayout = new QFormLayout(hotkeyGroup);
-    
-    auto createKeyCombo = [this]() -> QComboBox* {
-        QComboBox* combo = new QComboBox();
-        combo->addItem(tr("F1"), 0x70);
-        combo->addItem(tr("F2"), 0x71);
-        combo->addItem(tr("F3"), 0x72);
-        combo->addItem(tr("F4"), 0x73);
-        combo->addItem(tr("F5"), 0x74);
-        combo->addItem(tr("F6"), 0x75);
-        combo->addItem(tr("F7"), 0x76);
-        combo->addItem(tr("F8"), 0x77);
-        combo->addItem(tr("F9"), 0x78);
-        combo->addItem(tr("F10"), 0x79);
-        combo->addItem(tr("F11"), 0x7A);
-        combo->addItem(tr("F12"), 0x7B);
-        combo->addItem(tr("Pause"), 0x13);
-        combo->addItem(tr("Scroll Lock"), 0x91);
-        combo->addItem(tr("Escape"), 0x1B);
-        return combo;
-    };
-    
-    playStartKeyCombo_ = createKeyCombo();
-    hotkeyLayout->addRow(tr("Start Playback:"), playStartKeyCombo_);
-    
-    playPauseKeyCombo_ = createKeyCombo();
-    hotkeyLayout->addRow(tr("Pause/Resume:"), playPauseKeyCombo_);
-    
-    playCancelKeyCombo_ = createKeyCombo();
-	hotkeyLayout->addRow(
-		tr("Cancel Playback:"),
-		playCancelKeyCombo_);
+    QWidget* tab =
+        new QWidget();
 
-	/*
-	 * F9 and F10 are shared by the active workspace.
-	 * The separate playback-cancel hotkey is obsolete.
-	 */
-	playStartKeyCombo_->setCurrentText(
-		tr("F9"));
+    QVBoxLayout* layout =
+        new QVBoxLayout(
+            tab);
 
-	playStartKeyCombo_->setEnabled(
-		false);
+    // Active-workspace hotkeys.
+    QGroupBox* hotkeyGroup =
+        new QGroupBox(
+            tr("Active Workspace Hotkeys"));
 
-	playStartKeyCombo_->setToolTip(
-		tr("F9 starts or stops the active workspace"));
+    QFormLayout* hotkeyLayout =
+        new QFormLayout(
+            hotkeyGroup);
 
-	playPauseKeyCombo_->setCurrentText(
-		tr("F10"));
+    QLabel* startStopHotkeyLabel =
+        new QLabel(
+            tr("F9"),
+            hotkeyGroup);
 
-	playPauseKeyCombo_->setEnabled(
-		false);
+    startStopHotkeyLabel->setProperty(
+        "bold",
+        true);
 
-	playPauseKeyCombo_->setToolTip(
-		tr("F10 pauses or resumes the active workspace"));
+    hotkeyLayout->addRow(
+        tr("Start / Stop:"),
+        startStopHotkeyLabel);
 
-	playCancelKeyCombo_->setCurrentText(
-		tr("F12"));
+    QLabel* pauseResumeHotkeyLabel =
+        new QLabel(
+            tr("F10"),
+            hotkeyGroup);
 
-	playCancelKeyCombo_->setEnabled(
-		false);
+    pauseResumeHotkeyLabel->setProperty(
+        "bold",
+        true);
 
-	playCancelKeyCombo_->setToolTip(
-		tr(
-			"Playback is stopped with F9. "
-			"The separate cancel key is obsolete."));
+    hotkeyLayout->addRow(
+        tr("Pause / Resume:"),
+        pauseResumeHotkeyLabel);
 
-	layout->addWidget(hotkeyGroup);
-    
-    // Playback options
-    QGroupBox* optionsGroup = new QGroupBox(tr("Default Options"));
-    QFormLayout* optionsLayout = new QFormLayout(optionsGroup);
-    
+    QLabel* emergencyStopHotkeyLabel =
+        new QLabel(
+            tr("Ctrl+Shift+Escape"),
+            hotkeyGroup);
+
+    emergencyStopHotkeyLabel->setProperty(
+        "bold",
+        true);
+
+    hotkeyLayout->addRow(
+        tr("Emergency Stop:"),
+        emergencyStopHotkeyLabel);
+
+    QLabel* hotkeyExplanationLabel =
+        new QLabel(
+            tr(
+                "F9 and F10 control the active workspace: "
+                "Playback & Editing or Recording."),
+            hotkeyGroup);
+
+    hotkeyExplanationLabel->setWordWrap(
+        true);
+
+    hotkeyExplanationLabel->setProperty(
+        "subheading",
+        true);
+
+    hotkeyLayout->addRow(
+        hotkeyExplanationLabel);
+
+    layout->addWidget(
+        hotkeyGroup);
+
+    // Playback default options.
+    QGroupBox* optionsGroup =
+        new QGroupBox(
+            tr("Default Options"));
+
+    QFormLayout* optionsLayout =
+        new QFormLayout(
+            optionsGroup);
+
     QWidget* defaultLoopsWidget =
-		new QWidget(
-			optionsGroup);
+        new QWidget(
+            optionsGroup);
 
-	QHBoxLayout* defaultLoopsLayout =
-		new QHBoxLayout(
-			defaultLoopsWidget);
+    QHBoxLayout* defaultLoopsLayout =
+        new QHBoxLayout(
+            defaultLoopsWidget);
 
-	defaultLoopsLayout->setContentsMargins(
-		0,
-		0,
-		0,
-		0);
+    defaultLoopsLayout->setContentsMargins(
+        0,
+        0,
+        0,
+        0);
 
-	defaultLoopsLayout->setSpacing(
-		8);
+    defaultLoopsLayout->setSpacing(
+        8);
 
-	defaultLoopsSpin_ =
-		new QSpinBox(
-			defaultLoopsWidget);
+    defaultLoopsSpin_ =
+        new QSpinBox(
+            defaultLoopsWidget);
 
-	defaultLoopsSpin_->setRange(
-		1,
-		9999);
+    defaultLoopsSpin_->setRange(
+        1,
+        9999);
 
-	defaultLoopsSpin_->setValue(
-		1);
+    defaultLoopsSpin_->setValue(
+        1);
 
-	/*
-	 * Remove the small built-in up/down buttons. The value can still
-	 * be entered directly with the keyboard.
-	 */
-	defaultLoopsSpin_->setButtonSymbols(
-		QAbstractSpinBox::NoButtons);
+    defaultLoopsSpin_->setButtonSymbols(
+        QAbstractSpinBox::NoButtons);
 
-	defaultLoopsSpin_->setMinimumWidth(
-		100);
+    defaultLoopsSpin_->setMinimumWidth(
+        100);
 
-	defaultLoopsLayout->addWidget(
-		defaultLoopsSpin_);
+    defaultLoopsLayout->addWidget(
+        defaultLoopsSpin_);
 
-	infiniteLoopsButton_ =
-		new QPushButton(
-			tr("Set ∞"),
-			defaultLoopsWidget);
+    infiniteLoopsButton_ =
+        new QPushButton(
+            tr("Set ∞"),
+            defaultLoopsWidget);
 
-	infiniteLoopsButton_->setProperty(
-		"compact",
-		true);
+    infiniteLoopsButton_->setProperty(
+        "compact",
+        true);
 
-	infiniteLoopsButton_->setToolTip(
-		tr("Use infinite playback as the default"));
+    infiniteLoopsButton_->setToolTip(
+        tr("Use infinite playback as the default"));
 
-	connect(
-		infiniteLoopsButton_,
-		&QPushButton::clicked,
-		this,
-		&SettingsDialog::toggleDefaultLoopsInfinite);
+    connect(
+        infiniteLoopsButton_,
+        &QPushButton::clicked,
+        this,
+        &SettingsDialog::toggleDefaultLoopsInfinite);
 
-	defaultLoopsLayout->addWidget(
-		infiniteLoopsButton_);
+    defaultLoopsLayout->addWidget(
+        infiniteLoopsButton_);
 
-	defaultLoopsLayout->addStretch();
+    defaultLoopsLayout->addStretch();
 
-	optionsLayout->addRow(
-		tr("Default loop count:"),
-		defaultLoopsWidget);
-    
-    dryRunDefaultCheck_ = new QCheckBox(tr("Default to dry-run mode"));
-    dryRunDefaultCheck_->setChecked(true);
-    dryRunDefaultCheck_->setToolTip(tr("New playbacks will use dry-run mode by default (safe)"));
-    optionsLayout->addRow(dryRunDefaultCheck_);
-    
-    confirmRealPlaybackCheck_ = new QCheckBox(tr("Confirm before real playback"));
-    confirmRealPlaybackCheck_->setChecked(true);
-    confirmRealPlaybackCheck_->setToolTip(tr("Show confirmation dialog before sending actual input"));
-    optionsLayout->addRow(confirmRealPlaybackCheck_);
-    
-    layout->addWidget(optionsGroup);
-    
+    optionsLayout->addRow(
+        tr("Default loop count:"),
+        defaultLoopsWidget);
+
+    dryRunDefaultCheck_ =
+        new QCheckBox(
+            tr("Default to dry-run mode"));
+
+    dryRunDefaultCheck_->setChecked(
+        true);
+
+    dryRunDefaultCheck_->setToolTip(
+        tr(
+            "New playbacks will use dry-run mode "
+            "by default (safe)"));
+
+    optionsLayout->addRow(
+        dryRunDefaultCheck_);
+
+    confirmRealPlaybackCheck_ =
+        new QCheckBox(
+            tr("Confirm before real playback"));
+
+    confirmRealPlaybackCheck_->setChecked(
+        true);
+
+    confirmRealPlaybackCheck_->setToolTip(
+        tr(
+            "Show confirmation dialog before "
+            "sending actual input"));
+
+    optionsLayout->addRow(
+        confirmRealPlaybackCheck_);
+
+    layout->addWidget(
+        optionsGroup);
+
     layout->addStretch();
-    
+
     return tab;
 }
 
@@ -480,12 +541,16 @@ QWidget* SettingsDialog::createGeneralTab()
     globalHotkeysCheck_->setToolTip(tr("Allow controlling recording/playback with hotkeys even when the window is not focused"));
     hotkeyLayout->addWidget(globalHotkeysCheck_);
     
-    QLabel* hotkeyHint = new QLabel(tr("Default hotkeys: F9 (Record), F10 (Play), F11 (Pause), Ctrl+Shift+Esc (Emergency Stop)"));
+    QLabel* hotkeyHint =
+		new QLabel(
+			tr(
+				"Active workspace hotkeys: "
+				"F9 (Start/Stop), "
+				"F10 (Pause/Resume), "
+				"Ctrl+Shift+Escape (Emergency Stop)"));
     hotkeyHint->setProperty("subheading", true);
     hotkeyHint->setWordWrap(true);
     hotkeyLayout->addWidget(hotkeyHint);
-    
-    layout->addWidget(hotkeyGroup);
     
     // System Tray group
     QGroupBox* trayGroup = new QGroupBox(tr("System Tray"));
@@ -555,50 +620,7 @@ void SettingsDialog::toggleDefaultLoopsInfinite()
 
 void SettingsDialog::loadSettings()
 {
-    // Set recording hotkeys
-    for (int i = 0; i < recordStartKeyCombo_->count(); ++i) {
-        if (recordStartKeyCombo_->itemData(i).toInt() == settings_.recordStartKey) {
-            recordStartKeyCombo_->setCurrentIndex(i);
-            break;
-        }
-    }
-    
-    for (int i = 0; i < recordPauseKeyCombo_->count(); ++i) {
-        if (recordPauseKeyCombo_->itemData(i).toInt() == settings_.recordPauseKey) {
-            recordPauseKeyCombo_->setCurrentIndex(i);
-            break;
-        }
-    }
-    
-    for (int i = 0; i < recordStopKeyCombo_->count(); ++i) {
-        if (recordStopKeyCombo_->itemData(i).toInt() == settings_.recordStopKey) {
-            recordStopKeyCombo_->setCurrentIndex(i);
-            break;
-        }
-    }
-    
-    // Set playback hotkeys
-    for (int i = 0; i < playStartKeyCombo_->count(); ++i) {
-        if (playStartKeyCombo_->itemData(i).toInt() == settings_.playStartKey) {
-            playStartKeyCombo_->setCurrentIndex(i);
-            break;
-        }
-    }
-    
-    for (int i = 0; i < playPauseKeyCombo_->count(); ++i) {
-        if (playPauseKeyCombo_->itemData(i).toInt() == settings_.playPauseKey) {
-            playPauseKeyCombo_->setCurrentIndex(i);
-            break;
-        }
-    }
-    
-    for (int i = 0; i < playCancelKeyCombo_->count(); ++i) {
-        if (playCancelKeyCombo_->itemData(i).toInt() == settings_.playCancelKey) {
-            playCancelKeyCombo_->setCurrentIndex(i);
-            break;
-        }
-    }
-    
+ 
     defaultLoopsInfinite_ =
 		settings_.defaultLoops == 0;
 
@@ -665,13 +687,8 @@ void SettingsDialog::loadSettings()
 
 void SettingsDialog::saveSettings()
 {
-    settings_.recordStartKey = recordStartKeyCombo_->currentData().toInt();
-    settings_.recordPauseKey = recordPauseKeyCombo_->currentData().toInt();
-    settings_.recordStopKey = recordStopKeyCombo_->currentData().toInt();
-    
-    settings_.playStartKey = playStartKeyCombo_->currentData().toInt();
-    settings_.playPauseKey = playPauseKeyCombo_->currentData().toInt();
-    settings_.playCancelKey = playCancelKeyCombo_->currentData().toInt();
+
+   
     
     settings_.defaultLoops =
 		defaultLoopsInfinite_
@@ -710,49 +727,6 @@ void SettingsDialog::accept()
 
 void SettingsDialog::resetToDefaults()
 {
-    // Reset to F9, F10, F12 defaults
-    for (int i = 0; i < recordStartKeyCombo_->count(); ++i) {
-        if (recordStartKeyCombo_->itemData(i).toInt() == 0x78) { // F9
-            recordStartKeyCombo_->setCurrentIndex(i);
-            break;
-        }
-    }
-    
-    for (int i = 0; i < recordPauseKeyCombo_->count(); ++i) {
-        if (recordPauseKeyCombo_->itemData(i).toInt() == 0x79) { // F10
-            recordPauseKeyCombo_->setCurrentIndex(i);
-            break;
-        }
-    }
-    
-    for (int i = 0; i < recordStopKeyCombo_->count(); ++i) {
-        if (recordStopKeyCombo_->itemData(i).toInt() == 0x7B) { // F12
-            recordStopKeyCombo_->setCurrentIndex(i);
-            break;
-        }
-    }
-    
-    // Playback defaults
-    for (int i = 0; i < playStartKeyCombo_->count(); ++i) {
-        if (playStartKeyCombo_->itemData(i).toInt() == 0x78) { // F9
-            playStartKeyCombo_->setCurrentIndex(i);
-            break;
-        }
-    }
-    
-    for (int i = 0; i < playPauseKeyCombo_->count(); ++i) {
-        if (playPauseKeyCombo_->itemData(i).toInt() == 0x79) { // F10
-            playPauseKeyCombo_->setCurrentIndex(i);
-            break;
-        }
-    }
-    
-    for (int i = 0; i < playCancelKeyCombo_->count(); ++i) {
-        if (playCancelKeyCombo_->itemData(i).toInt() == 0x7B) { // F12
-            playCancelKeyCombo_->setCurrentIndex(i);
-            break;
-        }
-    }
     
     defaultLoopsInfinite_ =
 		false;
