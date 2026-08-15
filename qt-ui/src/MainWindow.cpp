@@ -23,17 +23,18 @@
 #include "RecordingThread.h"
 #include "GlobalHotkeyManager.h"
 #include "SystemTrayManager.h"
-
+#include <QButtonGroup>
+#include <QPushButton>
 #include "RecordingFile.h"
 #include "SettingsFile.h"
 
 #include <QApplication>
 #include <QMenuBar>
 #include <QMenu>
-#include <QToolBar>
 #include <QStatusBar>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QTabWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -82,12 +83,42 @@ MainWindow::MainWindow(QWidget* parent)
     trayManager_ = new SystemTrayManager(this, this);
     
     setupUi();
-    setupMenuBar();
-    setupToolBar();
-    setupCentralWidget();
-    setupStatusBar();
-    setupConnections();
-    
+	setupMenuBar();
+	setupCentralWidget();
+	setupStatusBar();
+	setupConnections();
+
+	/*
+	 * Apply the configured playback defaults after PlaybackWidget has
+	 * been created.
+	 */
+	QSettings playbackSettings(
+		"InputPlay",
+		"Studio");
+
+	settings_.defaultLoops =
+		playbackSettings.value(
+			"playback/defaultLoops",
+			settings_.defaultLoops)
+			.toInt();
+
+	dryRunDefault_ =
+		playbackSettings.value(
+			"playback/dryRunDefault",
+			true)
+			.toBool();
+
+	confirmRealPlayback_ =
+		playbackSettings.value(
+			"playback/confirmRealPlayback",
+			true)
+			.toBool();
+
+	playbackWidget_->applyDefaults(
+		settings_.defaultLoops,
+		dryRunDefault_);
+		
+	
     // Setup global hotkeys
     setupHotkeys();
     
@@ -234,16 +265,14 @@ void MainWindow::setupMenuBar()
     batchTimingAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_T));
     batchTimingAction_->setStatusTip(tr("Scale or offset event timing"));
     
-    editMenu->addSeparator();
-    
-    settingsAction_ = editMenu->addAction(tr("&Settings..."), this, &MainWindow::openSettings);
-    settingsAction_->setShortcut(QKeySequence::Preferences);
-    
     // Macro Menu (Recording/Playback)
     QMenu* macroMenu = menuBar()->addMenu(tr("&Macro"));
     
-    recordAction_ = macroMenu->addAction(tr("&Record..."), this, &MainWindow::startRecording);
-    recordAction_->setShortcut(QKeySequence(Qt::Key_F9));
+    recordAction_ =
+		macroMenu->addAction(
+			tr("&Recording Workspace"),
+			this,
+			&MainWindow::startRecording);
     recordAction_->setStatusTip(tr("Start recording a new macro"));
     
     QAction* stopRecordAction = macroMenu->addAction(tr("&Stop Recording"), this, &MainWindow::stopRecording);
@@ -264,29 +293,66 @@ void MainWindow::setupMenuBar()
     stopPlayAction->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
     stopPlayAction->setStatusTip(tr("Stop playback"));
     
-    macroMenu->addSeparator();
-    
-    recordingPanelAction_ = macroMenu->addAction(tr("Show &Recording Panel"));
-    recordingPanelAction_->setCheckable(true);
-    recordingPanelAction_->setChecked(false);
-    connect(recordingPanelAction_, &QAction::toggled, this, &MainWindow::toggleRecordingPanel);
-    
     // View Menu
     QMenu* viewMenu = menuBar()->addMenu(tr("&View"));
     
-    QActionGroup* viewGroup = new QActionGroup(this);
-    
-    listViewAction_ = viewMenu->addAction(tr("&List View"));
-    listViewAction_->setCheckable(true);
-    listViewAction_->setChecked(true);
-    listViewAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_1));
-    viewGroup->addAction(listViewAction_);
-    
-    timelineViewAction_ = viewMenu->addAction(tr("&Timeline View"));
-    timelineViewAction_->setCheckable(true);
-    timelineViewAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_2));
-    viewGroup->addAction(timelineViewAction_);
-    
+    QActionGroup* viewGroup =
+    new QActionGroup(this);
+
+	viewGroup->setExclusive(
+		true);
+
+	listViewAction_ =
+		viewMenu->addAction(
+			tr("&List View"));
+
+	listViewAction_->setCheckable(
+		true);
+
+	listViewAction_->setChecked(
+		true);
+
+	listViewAction_->setShortcut(
+		QKeySequence(
+			Qt::CTRL
+			| Qt::Key_1));
+
+	listViewAction_->setStatusTip(
+		tr("Show the event list"));
+
+	viewGroup->addAction(
+		listViewAction_);
+
+	connect(
+		listViewAction_,
+		&QAction::triggered,
+		this,
+		&MainWindow::showListView);
+
+	timelineViewAction_ =
+		viewMenu->addAction(
+			tr("&Timeline View"));
+
+	timelineViewAction_->setCheckable(
+		true);
+
+	timelineViewAction_->setShortcut(
+		QKeySequence(
+			Qt::CTRL
+			| Qt::Key_2));
+
+	timelineViewAction_->setStatusTip(
+		tr("Show the event timeline"));
+
+	viewGroup->addAction(
+		timelineViewAction_);
+
+	connect(
+		timelineViewAction_,
+		&QAction::triggered,
+		this,
+		&MainWindow::showTimelineView);
+		
     viewMenu->addSeparator();
     
     QAction* zoomInAction = viewMenu->addAction(tr("Zoom &In"));
@@ -339,6 +405,23 @@ void MainWindow::setupMenuBar()
     displayInfoAction_ = viewMenu->addAction(tr("&Display Compatibility..."), this, &MainWindow::showDisplayInfo);
     displayInfoAction_->setStatusTip(tr("View display compatibility details"));
     
+	// Settings is a primary menu-bar command.
+	settingsAction_ =
+		menuBar()->addAction(
+			tr("&Settings"));
+
+	settingsAction_->setShortcut(
+		QKeySequence::Preferences);
+
+	settingsAction_->setStatusTip(
+		tr("Open application settings"));
+
+	connect(
+		settingsAction_,
+		&QAction::triggered,
+		this,
+		&MainWindow::openSettings);
+	
     // Help Menu
     QMenu* helpMenu = menuBar()->addMenu(tr("&Help"));
     
@@ -352,241 +435,510 @@ void MainWindow::setupMenuBar()
     QAction* aboutQtAction = helpMenu->addAction(tr("About &Qt"), qApp, &QApplication::aboutQt);
 }
 
-void MainWindow::setupToolBar()
-{
-    mainToolBar_ = addToolBar(tr("Main Toolbar"));
-    mainToolBar_->setMovable(false);
-    mainToolBar_->setIconSize(QSize(20, 20));
-    
-    // File actions
-    QAction* newBtn = mainToolBar_->addAction(tr("New"));
-    connect(newBtn, &QAction::triggered, this, &MainWindow::newMacro);
-    
-    QAction* openBtn = mainToolBar_->addAction(tr("Open"));
-    connect(openBtn, &QAction::triggered, this, &MainWindow::openMacro);
-    
-    QAction* saveBtn = mainToolBar_->addAction(tr("Save"));
-    connect(saveBtn, &QAction::triggered, this, &MainWindow::saveMacro);
-    
-    mainToolBar_->addSeparator();
-    
-    // Recording action
-    QAction* recordBtn = mainToolBar_->addAction(tr("⏺ Record"));
-    recordBtn->setToolTip(tr("Start recording a new macro (F9)"));
-    connect(recordBtn, &QAction::triggered, this, &MainWindow::startRecording);
-    
-    mainToolBar_->addSeparator();
-    
-    // View toggle
-    QAction* listBtn = mainToolBar_->addAction(tr("List"));
-    listBtn->setCheckable(true);
-    listBtn->setChecked(true);
-    connect(listBtn, &QAction::triggered, this, [this]() {
-        viewStack_->setCurrentIndex(0);
-        listViewAction_->setChecked(true);
-    });
-    
-    QAction* timelineBtn = mainToolBar_->addAction(tr("Timeline"));
-    timelineBtn->setCheckable(true);
-    connect(timelineBtn, &QAction::triggered, this, [this]() {
-        viewStack_->setCurrentIndex(1);
-        timelineViewAction_->setChecked(true);
-    });
-    
-    QActionGroup* viewBtnGroup = new QActionGroup(this);
-    viewBtnGroup->addAction(listBtn);
-    viewBtnGroup->addAction(timelineBtn);
-    
-    mainToolBar_->addSeparator();
-    
-    // Zoom controls
-    QLabel* zoomIconLabel = new QLabel(tr("Zoom:"));
-    mainToolBar_->addWidget(zoomIconLabel);
-    
-    zoomSlider_ = new QSlider(Qt::Horizontal);
-    zoomSlider_->setRange(10, 400);
-    zoomSlider_->setValue(100);
-    zoomSlider_->setFixedWidth(100);
-    zoomSlider_->setToolTip(tr("Timeline zoom (10% - 400%)"));
-    connect(zoomSlider_, &QSlider::valueChanged, this, &MainWindow::onTimelineZoomChanged);
-    mainToolBar_->addWidget(zoomSlider_);
-    
-    zoomLabel_ = new QLabel(tr("100%"));
-    zoomLabel_->setMinimumWidth(40);
-    mainToolBar_->addWidget(zoomLabel_);
-    
-    mainToolBar_->addSeparator();
-    
-    // Settings
-    QAction* settingsBtn = mainToolBar_->addAction(tr("Settings"));
-    connect(settingsBtn, &QAction::triggered, this, &MainWindow::openSettings);
-}
-
 void MainWindow::setupCentralWidget()
 {
-    QWidget* centralWidget = new QWidget(this);
-    setCentralWidget(centralWidget);
-    
-    QHBoxLayout* mainLayout = new QHBoxLayout(centralWidget);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
+    QWidget* centralWidget =
+        new QWidget(this);
+
+    setCentralWidget(
+        centralWidget);
+
+    QHBoxLayout* mainLayout =
+        new QHBoxLayout(
+            centralWidget);
+
+    mainLayout->setContentsMargins(
+        0,
+        0,
+        0,
+        0);
+
     mainLayout->setSpacing(0);
-    
-    // Main horizontal splitter
-	mainSplitter_ =
-		new QSplitter(
-			Qt::Horizontal,
-			centralWidget);
 
-	mainSplitter_->setChildrenCollapsible(
-		false);
+    mainSplitter_ =
+        new QSplitter(
+            Qt::Horizontal,
+            centralWidget);
 
-	mainLayout->addWidget(
-		mainSplitter_);
-    
-    // Left Panel: Macro Info, Recording, and Statistics (stacked vertically)
-    QWidget* leftContainer = new QWidget(this);
-    QVBoxLayout* leftLayout = new QVBoxLayout(leftContainer);
-    leftLayout->setContentsMargins(0, 0, 0, 0);
+    mainSplitter_->setChildrenCollapsible(
+        false);
+
+    mainLayout->addWidget(
+        mainSplitter_);
+
+    /*
+     * Left sidebar.
+     *
+     * This area is dedicated to information about the loaded macro.
+     */
+    QWidget* leftContainer =
+        new QWidget(
+            mainSplitter_);
+
+    QVBoxLayout* leftLayout =
+        new QVBoxLayout(
+            leftContainer);
+
+    leftLayout->setContentsMargins(
+        0,
+        0,
+        0,
+        0);
+
     leftLayout->setSpacing(0);
-    
-    infoPanel_ = new MacroInfoPanel(this);
-    leftLayout->addWidget(infoPanel_, 1);
-    
-    // Recording Widget (hidden by default)
-    recordingWidget_ = new RecordingWidget(this);
-    recordingWidget_->setVisible(false);
-    leftLayout->addWidget(recordingWidget_, 1);
-    
-    // Statistics Panel (hidden by default)
-    statisticsPanel_ = new StatisticsPanel(this);
-    statisticsPanel_->setVisible(false);
-    leftLayout->addWidget(statisticsPanel_, 1);
-    
-    leftContainer->setMinimumWidth(250);
-    leftContainer->setMaximumWidth(400);
-    mainSplitter_->addWidget(leftContainer);
-    
-    // Center Panel: Event Views (List and Timeline)
-    QWidget* centerContainer =
-		new QWidget(this);
 
-	centerContainer->setMinimumWidth(
-		820);
+    infoPanel_ =
+        new MacroInfoPanel(
+            leftContainer);
 
-	QVBoxLayout* centerLayout =
-		new QVBoxLayout(
-			centerContainer);
-    centerLayout->setContentsMargins(0, 0, 0, 0);
-    centerLayout->setSpacing(0);
-    
-    // Playback Widget at top
-    playbackWidget_ = new PlaybackWidget(this);
-    centerLayout->addWidget(playbackWidget_);
-    
-    // Search widget (hidden by default)
-    searchWidget_ = new SearchWidget(this);
-    searchWidget_->setVisible(false);
-    centerLayout->addWidget(searchWidget_);
-    
-    // Filter widget
-    filterWidget_ = new EventFilterWidget(this);
-    filterWidget_->setContentsMargins(8, 4, 8, 4);
-    centerLayout->addWidget(filterWidget_);
-    
-    // View Stack (List/Timeline)
-    viewStack_ = new QStackedWidget(this);
-    
-    eventListView_ = new EventListView(this);
-    eventListView_->setModel(eventModel_);
-    viewStack_->addWidget(eventListView_);
-    
-    timelineWidget_ = new TimelineWidget(this);
-    viewStack_->addWidget(timelineWidget_);
-    
-    centerLayout->addWidget(viewStack_, 1);
-    
-    mainSplitter_->addWidget(centerContainer);
-    
-    // Right Panel: Property Editor and Undo History (stacked vertically)
-    QWidget* rightContainer = new QWidget(this);
-    QVBoxLayout* rightLayout = new QVBoxLayout(rightContainer);
-    rightLayout->setContentsMargins(0, 0, 0, 0);
+    leftLayout->addWidget(
+        infoPanel_,
+        1);
+
+    statisticsPanel_ =
+        new StatisticsPanel(
+            leftContainer);
+
+    statisticsPanel_->setVisible(
+        false);
+
+    leftLayout->addWidget(
+        statisticsPanel_,
+        1);
+
+    leftContainer->setMinimumWidth(
+        250);
+
+    leftContainer->setMaximumWidth(
+        400);
+
+    mainSplitter_->addWidget(
+        leftContainer);
+
+    /*
+     * Primary workflow tabs.
+     */
+    workspaceTabs_ =
+        new QTabWidget(
+            mainSplitter_);
+
+    workspaceTabs_->setMinimumWidth(
+        820);
+
+    workspaceTabs_->setTabPosition(
+        QTabWidget::North);
+
+    workspaceTabs_->setMovable(
+        false);
+
+    workspaceTabs_->setTabsClosable(
+        false);
+
+    workspaceTabs_->setDocumentMode(
+        false);
+
+    /*
+     * Playback and editing workspace.
+     */
+    editorWorkspace_ =
+        new QWidget(
+            workspaceTabs_);
+
+    QVBoxLayout* editorLayout =
+        new QVBoxLayout(
+            editorWorkspace_);
+
+    editorLayout->setContentsMargins(
+        0,
+        0,
+        0,
+        0);
+
+    editorLayout->setSpacing(0);
+
+    playbackWidget_ =
+        new PlaybackWidget(
+            editorWorkspace_);
+
+    editorLayout->addWidget(
+        playbackWidget_);
+
+    searchWidget_ =
+        new SearchWidget(
+            editorWorkspace_);
+
+    searchWidget_->setVisible(
+        false);
+
+    editorLayout->addWidget(
+        searchWidget_);
+
+    /*
+     * Editor-only view controls.
+     *
+     * These controls appear only on the Playback & Editing page.
+     */
+    QWidget* viewControls =
+        new QWidget(
+            editorWorkspace_);
+
+    QHBoxLayout* viewControlsLayout =
+        new QHBoxLayout(
+            viewControls);
+
+    viewControlsLayout->setContentsMargins(
+        8,
+        6,
+        8,
+        6);
+
+    viewControlsLayout->setSpacing(8);
+
+    listViewButton_ =
+        new QPushButton(
+            tr("List"),
+            viewControls);
+
+    listViewButton_->setCheckable(
+        true);
+
+    listViewButton_->setChecked(
+        true);
+
+    listViewButton_->setProperty(
+        "compact",
+        true);
+
+    listViewButton_->setToolTip(
+        tr("Show the event list"));
+
+    viewControlsLayout->addWidget(
+        listViewButton_);
+
+    timelineViewButton_ =
+        new QPushButton(
+            tr("Timeline"),
+            viewControls);
+
+    timelineViewButton_->setCheckable(
+        true);
+
+    timelineViewButton_->setProperty(
+        "compact",
+        true);
+
+    timelineViewButton_->setToolTip(
+        tr("Show the event timeline"));
+
+    viewControlsLayout->addWidget(
+        timelineViewButton_);
+
+    QButtonGroup* viewButtonGroup =
+        new QButtonGroup(
+            viewControls);
+
+    viewButtonGroup->setExclusive(
+        true);
+
+    viewButtonGroup->addButton(
+        listViewButton_);
+
+    viewButtonGroup->addButton(
+        timelineViewButton_);
+
+    connect(
+        listViewButton_,
+        &QPushButton::clicked,
+        this,
+        &MainWindow::showListView);
+
+    connect(
+        timelineViewButton_,
+        &QPushButton::clicked,
+        this,
+        &MainWindow::showTimelineView);
+
+    viewControlsLayout->addSpacing(
+        12);
+
+    QLabel* zoomTitleLabel =
+        new QLabel(
+            tr("Zoom:"),
+            viewControls);
+
+    viewControlsLayout->addWidget(
+        zoomTitleLabel);
+
+    zoomSlider_ =
+        new QSlider(
+            Qt::Horizontal,
+            viewControls);
+
+    zoomSlider_->setRange(
+        10,
+        400);
+
+    zoomSlider_->setValue(
+        100);
+
+    zoomSlider_->setMinimumWidth(
+        150);
+
+    zoomSlider_->setMaximumWidth(
+        260);
+
+    zoomSlider_->setToolTip(
+        tr("Timeline zoom (10% - 400%)"));
+
+    connect(
+        zoomSlider_,
+        &QSlider::valueChanged,
+        this,
+        &MainWindow::onTimelineZoomChanged);
+
+    viewControlsLayout->addWidget(
+        zoomSlider_,
+        1);
+
+    zoomLabel_ =
+        new QLabel(
+            tr("100%"),
+            viewControls);
+
+    zoomLabel_->setMinimumWidth(
+        45);
+
+    zoomLabel_->setAlignment(
+        Qt::AlignRight
+        | Qt::AlignVCenter);
+
+    viewControlsLayout->addWidget(
+        zoomLabel_);
+
+    viewControlsLayout->addStretch();
+
+    editorLayout->addWidget(
+        viewControls);
+
+    filterWidget_ =
+        new EventFilterWidget(
+            editorWorkspace_);
+
+    filterWidget_->setContentsMargins(
+        8,
+        4,
+        8,
+        4);
+
+    editorLayout->addWidget(
+        filterWidget_);
+
+    /*
+     * List and Timeline occupy the same editor area.
+     */
+    viewStack_ =
+        new QStackedWidget(
+            editorWorkspace_);
+
+    eventListView_ =
+        new EventListView(
+            viewStack_);
+
+    eventListView_->setModel(
+        eventModel_);
+
+    viewStack_->addWidget(
+        eventListView_);
+
+    timelineWidget_ =
+        new TimelineWidget(
+            viewStack_);
+
+    viewStack_->addWidget(
+        timelineWidget_);
+
+    editorLayout->addWidget(
+        viewStack_,
+        1);
+
+    workspaceTabs_->addTab(
+        editorWorkspace_,
+        tr("Playback && Editing"));
+
+    /*
+     * Recording workspace.
+     */
+    recordingWorkspace_ =
+        new QWidget(
+            workspaceTabs_);
+
+    QVBoxLayout* recordingLayout =
+        new QVBoxLayout(
+            recordingWorkspace_);
+
+    recordingLayout->setContentsMargins(
+        24,
+        24,
+        24,
+        24);
+
+    recordingLayout->setSpacing(0);
+
+    recordingWidget_ =
+        new RecordingWidget(
+            recordingWorkspace_);
+
+    recordingLayout->addWidget(
+        recordingWidget_,
+        1);
+
+    workspaceTabs_->addTab(
+        recordingWorkspace_,
+        tr("Recording"));
+
+    connect(
+        workspaceTabs_,
+        &QTabWidget::currentChanged,
+        this,
+        &MainWindow::onWorkspaceTabChanged);
+
+    workspaceTabs_->setCurrentIndex(
+        EditorWorkspaceIndex);
+
+    mainSplitter_->addWidget(
+        workspaceTabs_);
+
+    /*
+     * Right sidebar.
+     */
+    QWidget* rightContainer =
+        new QWidget(
+            mainSplitter_);
+
+    QVBoxLayout* rightLayout =
+        new QVBoxLayout(
+            rightContainer);
+
+    rightLayout->setContentsMargins(
+        0,
+        0,
+        0,
+        0);
+
     rightLayout->setSpacing(0);
-    
-    propertyEditor_ = new PropertyEditor(this);
-    rightLayout->addWidget(propertyEditor_, 2);
-    
-    // Undo History Panel (hidden by default)
-    undoHistoryPanel_ = new UndoHistoryPanel(this);
-    undoHistoryPanel_->setUndoStack(undoStack_);
-    undoHistoryPanel_->setVisible(false);
-    rightLayout->addWidget(undoHistoryPanel_, 1);
-    
-    rightContainer->setMinimumWidth(280);
-    rightContainer->setMaximumWidth(450);
-    mainSplitter_->addWidget(rightContainer);
-    
-    // Set splitter sizes
-    // Prevent individual panels from being collapsed.
-	mainSplitter_->setCollapsible(
-		0,
-		false);
 
-	mainSplitter_->setCollapsible(
-		1,
-		false);
+    propertyEditor_ =
+        new PropertyEditor(
+            rightContainer);
 
-	mainSplitter_->setCollapsible(
-		2,
-		false);
+    rightLayout->addWidget(
+        propertyEditor_,
+        2);
 
-	// Give the center workspace most of the available width.
-	mainSplitter_->setSizes(
-		{
-			260,
-			850,
-			290
-		});
+    undoHistoryPanel_ =
+        new UndoHistoryPanel(
+            rightContainer);
 
-	mainSplitter_->setStretchFactor(
-		0,
-		0);
+    undoHistoryPanel_->setUndoStack(
+        undoStack_);
 
-	mainSplitter_->setStretchFactor(
-		1,
-		1);
+    undoHistoryPanel_->setVisible(
+        false);
 
-	mainSplitter_->setStretchFactor(
-		2,
-		0);
+    rightLayout->addWidget(
+        undoHistoryPanel_,
+        1);
+
+    rightContainer->setMinimumWidth(
+        280);
+
+    rightContainer->setMaximumWidth(
+        450);
+
+    mainSplitter_->addWidget(
+        rightContainer);
+
+    mainSplitter_->setCollapsible(
+        0,
+        false);
+
+    mainSplitter_->setCollapsible(
+        1,
+        false);
+
+    mainSplitter_->setCollapsible(
+        2,
+        false);
+
+    mainSplitter_->setSizes(
+        {
+            260,
+            850,
+            290
+        });
+
+    mainSplitter_->setStretchFactor(
+        0,
+        0);
+
+    mainSplitter_->setStretchFactor(
+        1,
+        1);
+
+    mainSplitter_->setStretchFactor(
+        2,
+        0);
 }
+
+
+
+
+
+
+
+
+
+
+
 
 void MainWindow::setupStatusBar()
 {
-    statusLabel_ = new QLabel(tr("Ready"));
-    statusBar()->addWidget(statusLabel_, 1);
-    
-    durationLabel_ = new QLabel(tr(""));
-    statusBar()->addPermanentWidget(durationLabel_);
-    
-    selectionLabel_ = new QLabel(tr("No selection"));
-    statusBar()->addPermanentWidget(selectionLabel_);
-    
-    coordsLabel_ = new QLabel(tr(""));
-    statusBar()->addPermanentWidget(coordsLabel_);
+    statusLabel_ =
+        new QLabel(
+            tr("Ready"),
+            this);
+
+    statusBar()->addWidget(
+        statusLabel_,
+        1);
+
+    durationLabel_ =
+        new QLabel(
+            QString(),
+            this);
+
+    statusBar()->addPermanentWidget(
+        durationLabel_);
+
+    selectionLabel_ =
+        new QLabel(
+            tr("No selection"),
+            this);
+
+    statusBar()->addPermanentWidget(
+        selectionLabel_);
+
+    coordsLabel_ =
+        new QLabel(
+            QString(),
+            this);
+
+    statusBar()->addPermanentWidget(
+        coordsLabel_);
 }
 
 void MainWindow::setupConnections()
 {
-    // View actions
-    connect(listViewAction_, &QAction::triggered, this, [this]() {
-        viewStack_->setCurrentIndex(0);
-    });
-    
-    connect(timelineViewAction_, &QAction::triggered, this, [this]() {
-        viewStack_->setCurrentIndex(1);
-    });
-    
     // Filter widget
     connect(filterWidget_, &EventFilterWidget::filterChanged, this, &MainWindow::onFilterChanged);
     
@@ -633,11 +985,24 @@ void MainWindow::setupConnections()
         playbackWidget_->setPlaybackActive(true);
     });
     
-    connect(playbackThread_, &PlaybackThread::playbackStopped, this, [this]() {
-        statusLabel_->setText(tr("Stopped"));
-        playbackWidget_->setPlaybackActive(false);
-        timelineWidget_->clearPlayhead();
-    });
+    connect(
+		playbackThread_,
+		&QThread::finished,
+		this,
+		[this]()
+		{
+			playbackWidget_->setPlaybackStopped();
+
+			timelineWidget_->clearPlayhead();
+
+			statusLabel_->setText(
+				tr("Playback stopped"));
+
+			if (trayManager_)
+			{
+				trayManager_->setIdleState();
+			}
+		});
     
     connect(playbackThread_, &PlaybackThread::playbackCompleted, this, [this]() {
         statusLabel_->setText(tr("Playback completed"));
@@ -666,25 +1031,90 @@ void MainWindow::setupConnections()
     });
     
     // Playback widget to thread
-    connect(playbackWidget_, &PlaybackWidget::playRequested, this, [this]() {
-        if (recording_ && !recording_->empty()) {
-            playbackThread_->setRecording(recording_.get());
-            playbackThread_->setSpeed(playbackWidget_->speed());
-            playbackThread_->setDryRun(playbackWidget_->isDryRun());
-            playbackThread_->setLooping(playbackWidget_->isLooping());
-            playbackThread_->start();
-        }
-    });
-    
+    connect(
+		playbackWidget_,
+		&PlaybackWidget::playRequested,
+		this,
+		[this]()
+		{
+			if (!recording_
+				|| recording_->empty())
+			{
+				playbackWidget_->setPlaybackStopped();
+
+				statusLabel_->setText(
+					tr("No macro loaded"));
+
+				return;
+			}
+
+			/*
+			 * QThread cannot be restarted until the preceding run has
+			 * completely exited.
+			 */
+			if (playbackThread_->isRunning())
+			{
+				statusLabel_->setText(
+					tr("Playback is still stopping"));
+
+				return;
+			}
+			
+			if (!playbackWidget_->isDryRun()
+				&& confirmRealPlayback_)
+			{
+				const QMessageBox::StandardButton result =
+					QMessageBox::warning(
+						this,
+						tr("Confirm Real Playback"),
+						tr(
+							"Dry Run is disabled.\n\n"
+							"InputPlay will send real mouse and keyboard "
+							"input to the system.\n\n"
+							"Start playback?"),
+						QMessageBox::Yes
+							| QMessageBox::No,
+						QMessageBox::No);
+
+				if (result != QMessageBox::Yes)
+				{
+					playbackWidget_->setPlaybackStopped();
+
+					statusLabel_->setText(
+						tr("Playback cancelled"));
+
+					return;
+				}
+			}
+
+			playbackThread_->setRecording(
+				recording_.get());
+
+			playbackThread_->setSpeed(
+				playbackWidget_->speed());
+
+			playbackThread_->setDryRun(
+				playbackWidget_->isDryRun());
+
+			if (playbackWidget_->isLooping())
+			{
+				playbackThread_->setLooping(
+					true);
+			}
+			else
+			{
+				playbackThread_->setLoopCount(
+					playbackWidget_->loopCount());
+			}
+
+			playbackThread_->startConfiguredPlayback();
+		});
+		
     connect(playbackWidget_, &PlaybackWidget::pauseRequested, playbackThread_, &PlaybackThread::pause);
     connect(playbackWidget_, &PlaybackWidget::resumeRequested, playbackThread_, &PlaybackThread::resume);
     connect(playbackWidget_, &PlaybackWidget::stopRequested, playbackThread_, &PlaybackThread::stop);
     
     connect(playbackWidget_, &PlaybackWidget::speedChanged, playbackThread_, &PlaybackThread::setSpeed);
-    
-    // Info panel file operations
-    connect(infoPanel_, &MacroInfoPanel::newRequested, this, &MainWindow::newMacro);
-    connect(infoPanel_, &MacroInfoPanel::openRequested, this, &MainWindow::openMacro);
     
     // Search widget connections
     connect(searchWidget_, &SearchWidget::navigateToResult, this, [this](int index) {
@@ -846,21 +1276,69 @@ void MainWindow::openSettings()
         DarkStyle::apply(qApp, theme, accent);
     });
     
-    if (dialog.exec() == QDialog::Accepted) {
-        settings_ = dialog.settings();
-        
-        // Save appearance settings
-        QSettings qsettings("InputPlay", "Studio");
-        qsettings.setValue("theme", static_cast<int>(dialog.selectedTheme()));
-        qsettings.setValue("accentColor", static_cast<int>(dialog.selectedAccent()));
-        
-        statusLabel_->setText(tr("Settings updated"));
-    } else {
-        // User cancelled - restore original theme
-        if (DarkStyle::currentTheme() != originalTheme || DarkStyle::currentAccent() != originalAccent) {
-            DarkStyle::apply(qApp, originalTheme, originalAccent);
-        }
-    }
+    if (dialog.exec() == QDialog::Accepted)
+	{
+		settings_ =
+			dialog.settings();
+
+		QSettings qsettings(
+			"InputPlay",
+			"Studio");
+
+		// Save appearance settings.
+		qsettings.setValue(
+			"theme",
+			static_cast<int>(
+				dialog.selectedTheme()));
+
+		qsettings.setValue(
+			"accentColor",
+			static_cast<int>(
+				dialog.selectedAccent()));
+
+		// Save playback defaults.
+		qsettings.setValue(
+			"playback/defaultLoops",
+			settings_.defaultLoops);
+
+		/*
+		 * SettingsDialog saves these GUI-only values directly to QSettings.
+		 * Read them back so MainWindow can apply them immediately.
+		*/
+		dryRunDefault_ =
+			qsettings.value(
+				"playback/dryRunDefault",
+				true)
+				.toBool();
+
+		confirmRealPlayback_ =
+			qsettings.value(
+				"playback/confirmRealPlayback",
+				true)
+				.toBool();
+
+		/*
+		 * Apply the defaults immediately. These values remain editable
+		 * from the Playback workspace afterward.
+		 */
+		playbackWidget_->applyDefaults(
+			settings_.defaultLoops,
+			dryRunDefault_);
+		statusLabel_->setText(
+			tr("Settings updated"));
+	}
+	else
+	{
+		// User cancelled - restore original theme.
+		if (DarkStyle::currentTheme() != originalTheme
+			|| DarkStyle::currentAccent() != originalAccent)
+		{
+			DarkStyle::apply(
+				qApp,
+				originalTheme,
+				originalAccent);
+		}
+	}
 }
 
 void MainWindow::showAbout()
@@ -1585,78 +2063,271 @@ void MainWindow::toggleUndoHistoryPanel(bool visible)
     }
 }
 
-void MainWindow::toggleRecordingPanel(bool visible)
+
+void MainWindow::showEditorWorkspace()
 {
-    if (recordingWidget_) {
-        recordingWidget_->setVisible(visible);
+    if (!workspaceTabs_)
+    {
+        return;
+    }
+
+    workspaceTabs_->setCurrentIndex(
+        EditorWorkspaceIndex);
+}
+
+void MainWindow::showRecordingWorkspace()
+{
+    if (!workspaceTabs_)
+    {
+        return;
+    }
+
+    /*
+     * Selecting this tab only displays the recording setup.
+     * Recording begins only when the user presses the Record
+     * button inside RecordingWidget.
+     */
+    workspaceTabs_->setCurrentIndex(
+        RecordingWorkspaceIndex);
+}
+
+void MainWindow::onWorkspaceTabChanged(
+    int index)
+{
+    if (!statusLabel_)
+    {
+        return;
+    }
+
+    if (index == EditorWorkspaceIndex)
+    {
+        updateStatusBar();
+        return;
+    }
+
+    if (recordingWidget_
+        && recordingWidget_->isRecording())
+    {
+        if (recordingWidget_->isPaused())
+        {
+            statusLabel_->setText(
+                tr("Recording paused"));
+        }
+        else
+        {
+            statusLabel_->setText(
+                tr("Recording in progress"));
+        }
+
+        return;
+    }
+
+    statusLabel_->setText(
+        tr("Configure recording options and press Record"));
+}
+
+void MainWindow::showListView()
+{
+    showEditorWorkspace();
+
+    if (viewStack_)
+    {
+        viewStack_->setCurrentIndex(
+            0);
+    }
+
+    if (listViewButton_)
+    {
+        listViewButton_->setChecked(
+            true);
+    }
+
+    if (timelineViewButton_)
+    {
+        timelineViewButton_->setChecked(
+            false);
+    }
+
+    if (listViewAction_)
+    {
+        listViewAction_->setChecked(
+            true);
+    }
+}
+
+void MainWindow::showTimelineView()
+{
+    showEditorWorkspace();
+
+    if (viewStack_)
+    {
+        viewStack_->setCurrentIndex(
+            1);
+    }
+
+    if (listViewButton_)
+    {
+        listViewButton_->setChecked(
+            false);
+    }
+
+    if (timelineViewButton_)
+    {
+        timelineViewButton_->setChecked(
+            true);
+    }
+
+    if (timelineViewAction_)
+    {
+        timelineViewAction_->setChecked(
+            true);
     }
 }
 
 void MainWindow::startRecording()
 {
-    // Show recording panel if hidden
-    if (recordingWidget_ && !recordingWidget_->isVisible()) {
-        recordingWidget_->setVisible(true);
-        recordingPanelAction_->setChecked(true);
-    }
-    
-    // Check if we should confirm discarding changes
-    if (!confirmDiscardChanges()) {
-        return;
-    }
-    
-    // Start recording
-    if (recordingWidget_) {
-        recordingWidget_->startRecording();
+    /*
+     * Toolbar and menu commands navigate to the recording page.
+     * They do not start the countdown or recording thread.
+     */
+    showRecordingWorkspace();
+
+    if (statusLabel_)
+    {
+        statusLabel_->setText(
+            tr("Configure recording options and press Record"));
     }
 }
 
 void MainWindow::stopRecording()
 {
-    if (recordingWidget_ && recordingWidget_->isRecording()) {
-        recordingWidget_->stopRecording();
+    if (!recordingWidget_
+        || !recordingWidget_->isRecording())
+    {
+        return;
+    }
+
+    recordingWidget_->stopRecording();
+}
+
+void MainWindow::onRecordingCompleted(
+    bool hasEvents)
+{
+    if (!hasEvents)
+    {
+        showEditorWorkspace();
+
+        QMessageBox::information(
+            this,
+            tr("Recording"),
+            tr("No events were recorded."));
+
+        if (trayManager_)
+        {
+            trayManager_->setIdleState();
+        }
+
+        return;
+    }
+
+    if (!recordingWidget_
+        || !recordingWidget_->recordingThread())
+    {
+        showEditorWorkspace();
+        return;
+    }
+
+    std::unique_ptr<Recording> newRecording =
+        recordingWidget_
+            ->recordingThread()
+            ->takeRecording();
+
+    if (!newRecording
+        || newRecording->eventCount() == 0)
+    {
+        showEditorWorkspace();
+
+        QMessageBox::information(
+            this,
+            tr("Recording"),
+            tr("No events were recorded."));
+
+        return;
+    }
+
+    *recording_ =
+        std::move(
+            *newRecording);
+
+    currentFilePath_.clear();
+    modified_ = true;
+
+    undoStack_->clear();
+
+    eventModel_->setRecording(
+        recording_.get());
+
+    infoPanel_->setRecording(
+        recording_.get(),
+        QString());
+
+    timelineWidget_->setRecording(
+        recording_.get());
+
+    playbackWidget_->setRecording(
+        recording_.get());
+
+    propertyEditor_->clear();
+
+    searchWidget_->setRecording(
+        recording_.get());
+
+    statisticsPanel_->setRecording(
+        recording_.get());
+
+    updateWindowTitle();
+    updateActionStates();
+    updateStatusBar();
+
+    showEditorWorkspace();
+
+    if (recording_->eventCount() > 0)
+    {
+        eventListView_->selectEvent(0);
+    }
+
+    statusLabel_->setText(
+        tr("Recorded %1 events")
+            .arg(
+                recording_->eventCount()));
+
+    if (trayManager_)
+    {
+        trayManager_->showMessage(
+            tr("Recording Complete"),
+            tr("Recorded %1 events")
+                .arg(
+                    recording_->eventCount()));
+
+        trayManager_->setIdleState();
     }
 }
 
-void MainWindow::onRecordingCompleted(bool hasEvents)
+void MainWindow::onRecordingCancelled()
 {
-    if (!hasEvents) {
-        QMessageBox::information(this, tr("Recording"),
-            tr("No events were recorded."));
-        return;
+    /*
+     * Stay in the Recording workspace after cancellation so the
+     * user can adjust the options and try again.
+     */
+    showRecordingWorkspace();
+
+    if (trayManager_)
+    {
+        trayManager_->setIdleState();
     }
-    
-    // Take the recording from the recording widget
-    if (recordingWidget_ && recordingWidget_->recordingThread()) {
-        auto newRecording = recordingWidget_->recordingThread()->takeRecording();
-        if (newRecording && newRecording->eventCount() > 0) {
-            *recording_ = std::move(*newRecording);
-            currentFilePath_.clear();
-            modified_ = true;
-            
-            undoStack_->clear();
-            
-            eventModel_->setRecording(recording_.get());
-            infoPanel_->setRecording(recording_.get(), "");
-            timelineWidget_->setRecording(recording_.get());
-            playbackWidget_->setRecording(recording_.get());
-            propertyEditor_->clear();
-            searchWidget_->setRecording(recording_.get());
-            statisticsPanel_->setRecording(recording_.get());
-            
-            updateWindowTitle();
-            updateActionStates();
-            
-            statusLabel_->setText(tr("Recorded %1 events").arg(recording_->eventCount()));
-            
-            // Show tray notification
-            if (trayManager_) {
-                trayManager_->showMessage(tr("Recording Complete"),
-                    tr("Recorded %1 events").arg(recording_->eventCount()));
-                trayManager_->setIdleState();
-            }
-        }
-    }
+
+    statusLabel_->setText(
+        tr("Recording cancelled - ready to record again"));
 }
 
 void MainWindow::setupHotkeys()
@@ -1690,12 +2361,45 @@ void MainWindow::setupHotkeys()
     bool hotkeysEnabled = settings.value("hotkeysEnabled", true).toBool();
     
     if (hotkeysEnabled) {
-#ifdef _WIN32
-        hotkeyManager_->registerHotkey(GlobalHotkeyManager::RecordStartStop, VK_F9);
-        hotkeyManager_->registerHotkey(GlobalHotkeyManager::PlaybackStartStop, VK_F10);
-        hotkeyManager_->registerHotkey(GlobalHotkeyManager::PlaybackPause, VK_F11);
-        hotkeyManager_->registerHotkey(GlobalHotkeyManager::EmergencyStop, VK_ESCAPE, Qt::ControlModifier | Qt::ShiftModifier);
-#endif
+		#ifdef _WIN32
+		/*
+		 * F9 and F10 are workspace-dependent:
+		 *
+		 * Playback & Editing:
+		 *   F9  = Start/Stop playback
+		 *   F10 = Pause/Resume playback
+		 *
+		 * Recording:
+		 *   F9  = Start/Stop recording
+		 *   F10 = Pause/Resume recording
+		 */
+		const bool startStopRegistered =
+			hotkeyManager_->registerHotkey(
+				GlobalHotkeyManager::PlaybackStartStop,
+				VK_F9);
+
+		const bool pauseResumeRegistered =
+			hotkeyManager_->registerHotkey(
+				GlobalHotkeyManager::PlaybackPause,
+				VK_F10);
+
+		const bool emergencyStopRegistered =
+			hotkeyManager_->registerHotkey(
+				GlobalHotkeyManager::EmergencyStop,
+				VK_ESCAPE,
+				Qt::ControlModifier
+					| Qt::ShiftModifier);
+
+		if (!startStopRegistered
+			|| !pauseResumeRegistered
+			|| !emergencyStopRegistered)
+		{
+			statusLabel_->setText(
+				tr(
+					"One or more global hotkeys "
+					"could not be registered"));
+		}
+		#endif
         hotkeyManager_->setEnabled(true);
     }
     
@@ -1713,12 +2417,11 @@ void MainWindow::setupHotkeys()
         connect(recordingWidget_, &RecordingWidget::recordingCompleted,
                 this, &MainWindow::onRecordingCompleted);
         
-        connect(recordingWidget_, &RecordingWidget::recordingCancelled, this, [this]() {
-            if (trayManager_) {
-                trayManager_->setIdleState();
-            }
-            statusLabel_->setText(tr("Recording cancelled"));
-        });
+        connect(
+			recordingWidget_,
+			&RecordingWidget::recordingCancelled,
+			this,
+			&MainWindow::onRecordingCancelled);
         
         connect(recordingWidget_, &RecordingWidget::statusChanged,
                 statusLabel_, &QLabel::setText);
@@ -1727,11 +2430,25 @@ void MainWindow::setupHotkeys()
 
 void MainWindow::onRecordStartStopHotkey()
 {
-    if (recordingWidget_ && recordingWidget_->isRecording()) {
-        stopRecording();
-    } else {
-        startRecording();
+    if (!recordingWidget_)
+    {
+        return;
     }
+
+    if (recordingWidget_->isRecording())
+    {
+        stopRecording();
+        return;
+    }
+
+    if (!confirmDiscardChanges())
+    {
+        return;
+    }
+
+    showRecordingWorkspace();
+
+    recordingWidget_->startRecording();
 }
 
 void MainWindow::onRecordPauseHotkey()
@@ -1746,33 +2463,110 @@ void MainWindow::onRecordPauseHotkey()
 
 void MainWindow::onPlaybackStartStopHotkey()
 {
-    if (playbackWidget_->isPlaying()) {
+    if (!workspaceTabs_)
+    {
+        return;
+    }
+
+    /*
+     * F9 controls recording while the Recording workspace is open.
+     */
+    if (workspaceTabs_->currentIndex()
+        == RecordingWorkspaceIndex)
+    {
+        onRecordStartStopHotkey();
+        return;
+    }
+
+    /*
+     * Otherwise, F9 controls playback.
+     */
+    if (!playbackWidget_
+        || !playbackThread_)
+    {
+        return;
+    }
+
+    if (playbackThread_->isRunning())
+    {
         playbackWidget_->stop();
-        if (trayManager_) {
-            trayManager_->setIdleState();
-        }
-    } else if (recording_ && recording_->eventCount() > 0) {
-        playbackWidget_->play();
-        if (trayManager_) {
-            trayManager_->setPlaybackState(true, false);
-        }
+
+        statusLabel_->setText(
+            tr("Stopping playback..."));
+
+        return;
+    }
+
+    if (!recording_
+        || recording_->empty())
+    {
+        playbackWidget_->setPlaybackStopped();
+
+        statusLabel_->setText(
+            tr("No macro loaded"));
+
+        return;
+    }
+
+    playbackWidget_->play();
+
+    if (trayManager_)
+    {
+        trayManager_->setPlaybackState(
+            true,
+            false);
     }
 }
 
 void MainWindow::onPlaybackPauseHotkey()
 {
-    if (playbackWidget_->isPlaying()) {
-        if (playbackWidget_->isPaused()) {
-            playbackWidget_->resume();
-            if (trayManager_) {
-                trayManager_->setPlaybackState(true, false);
-            }
-        } else {
-            playbackWidget_->pause();
-            if (trayManager_) {
-                trayManager_->setPlaybackState(true, true);
-            }
+    if (!workspaceTabs_)
+    {
+        return;
+    }
+
+    /*
+     * F10 controls recording pause/resume while the Recording
+     * workspace is open.
+     */
+    if (workspaceTabs_->currentIndex()
+        == RecordingWorkspaceIndex)
+    {
+        onRecordPauseHotkey();
+        return;
+    }
+
+    /*
+     * Otherwise, F10 controls playback pause/resume.
+     */
+    if (!playbackWidget_
+        || !playbackThread_
+        || !playbackThread_->isRunning())
+    {
+        return;
+    }
+
+    if (playbackWidget_->isPaused())
+    {
+        playbackWidget_->resume();
+
+        if (trayManager_)
+        {
+            trayManager_->setPlaybackState(
+                true,
+                false);
         }
+
+        return;
+    }
+
+    playbackWidget_->pause();
+
+    if (trayManager_)
+    {
+        trayManager_->setPlaybackState(
+            true,
+            true);
     }
 }
 

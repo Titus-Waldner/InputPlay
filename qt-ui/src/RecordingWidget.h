@@ -22,6 +22,7 @@ public:
     ~RecordingWidget() override;
 
     bool isRecording() const;
+	bool isCountingDown() const;
     bool isPaused() const;
     
     RecordingThread* recordingThread() const { return recordingThread_; }
@@ -48,11 +49,13 @@ private:
     void setupUi();
     void updateButtonStates();
     void startCountdown();
+	void cancelCountdown();
     QString formatDuration(uint64_t microseconds) const;
     
     RecordingThread* recordingThread_ = nullptr;
     QTimer* countdownTimer_ = nullptr;
     int countdownValue_ = 0;
+	bool countdownActive_ = false;
     
     // UI Elements
     QPushButton* recordButton_ = nullptr;

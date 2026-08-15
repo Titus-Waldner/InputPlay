@@ -174,7 +174,7 @@ void PlaybackWidget::setupUi()
     
     // Mode checkboxes
     dryRunCheck_ = new QCheckBox(tr("Dry Run"));
-    dryRunCheck_->setChecked(true);
+    dryRunCheck_->setChecked(false);
     dryRunCheck_->setToolTip(tr("Simulate playback without sending actual input (safe mode)"));
     optionsLayout->addWidget(
 		dryRunCheck_);
@@ -184,6 +184,8 @@ void PlaybackWidget::setupUi()
     optionsLayout->addWidget(
 		alignStartCheck_);
 		
+	alignStartCheck_->setChecked(true);
+	
     optionsLayout->addStretch();
 
 	controlsLayout->addLayout(
@@ -308,18 +310,32 @@ void PlaybackWidget::resume()
 
 void PlaybackWidget::stop()
 {
-    if (!playing_) {
+    if (!playing_)
+    {
         return;
     }
-    
-    playing_ = false;
-    paused_ = false;
+
+    /*
+     * Keep playing_ true until PlaybackThread has actually exited.
+     * MainWindow calls setPlaybackStopped() from QThread::finished.
+     */
+    paused_ =
+        false;
+
     controller_->requestCancel();
-    
-    updateButtonStates();
-    progressLabel_->setText(tr("Stopped"));
-    progressBar_->setValue(0);
-    
+
+    playButton_->setEnabled(
+        false);
+
+    pauseButton_->setEnabled(
+        false);
+
+    stopButton_->setEnabled(
+        false);
+
+    progressLabel_->setText(
+        tr("Stopping..."));
+
     emit stopRequested();
 }
 
@@ -451,7 +467,99 @@ bool PlaybackWidget::isDryRun() const
 
 bool PlaybackWidget::isLooping() const
 {
-    return loopCombo_->currentIndex() > 0; // 0 = No loop
+    /*
+     * A stored value of zero represents infinite playback.
+     * Values greater than zero represent a finite loop count.
+     */
+    return loopCombo_->currentData().toInt()
+        == 0;
+}
+
+int PlaybackWidget::loopCount() const
+{
+    const int selectedValue =
+        loopCombo_->currentData().toInt();
+
+    if (selectedValue == -1)
+    {
+        return loopSpinBox_->value();
+    }
+
+    if (selectedValue == 0)
+    {
+        return 0;
+    }
+
+    return selectedValue;
+}
+
+void PlaybackWidget::applyDefaults(
+    int loopCount,
+    bool dryRun)
+{
+    if (playing_)
+    {
+        return;
+    }
+	
+	if (loopCount == 0)
+	{
+		const int infiniteIndex =
+			loopCombo_->findData(
+				0);
+
+		loopCombo_->setCurrentIndex(
+			infiniteIndex);
+
+		loopSpinBox_->setVisible(
+			false);
+
+		dryRunCheck_->setChecked(
+			dryRun);
+
+		return;
+	}
+
+	if (loopCount < 1)
+	{
+		loopCount =
+			1;
+	}
+
+    /*
+     * Use a predefined entry when one exists. Otherwise select the
+     * Custom entry and put the value in the custom spin box.
+     */
+    int matchingIndex =
+        loopCombo_->findData(
+            loopCount);
+
+    if (matchingIndex >= 0)
+    {
+        loopCombo_->setCurrentIndex(
+            matchingIndex);
+
+        loopSpinBox_->setVisible(
+            false);
+    }
+    else
+    {
+        const int customIndex =
+            loopCombo_->findData(
+                -1);
+
+        loopCombo_->setCurrentIndex(
+            customIndex);
+
+        loopSpinBox_->setValue(
+            loopCount);
+
+        loopSpinBox_->setVisible(
+            true);
+    }
+
+    dryRunCheck_->setChecked(
+        dryRun);
 }
 
 void PlaybackWidget::setPlaybackActive(bool active)
@@ -463,6 +571,28 @@ void PlaybackWidget::setPlaybackActive(bool active)
     if (!active) {
         progressBar_->setValue(0);
     }
+}
+
+void PlaybackWidget::setPlaybackStopped()
+{
+    playing_ =
+        false;
+
+    paused_ =
+        false;
+
+    updateButtonStates();
+
+    progressBar_->setValue(
+        0);
+
+    progressLabel_->setText(
+        tr("Stopped"));
+
+    loopLabel_->clear();
+
+    timeLabel_->setText(
+        tr("0:00 / 0:00"));
 }
 
 void PlaybackWidget::updateProgress(int eventIndex, int totalEvents)

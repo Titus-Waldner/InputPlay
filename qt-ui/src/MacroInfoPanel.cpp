@@ -4,9 +4,7 @@
 #include "DarkStyle.h"
 
 #include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QLabel>
-#include <QPushButton>
 #include <QGroupBox>
 #include <QFrame>
 #include <QFileInfo>
@@ -28,21 +26,6 @@ void MacroInfoPanel::setupUi()
     QLabel* title = new QLabel(tr("Macro Info"));
     title->setProperty("heading", true);
     mainLayout->addWidget(title);
-    
-    // Action buttons at top
-    QHBoxLayout* buttonLayout = new QHBoxLayout();
-    
-    newButton_ = new QPushButton(tr("New"));
-    newButton_->setToolTip(tr("Create new macro"));
-    connect(newButton_, &QPushButton::clicked, this, &MacroInfoPanel::newRequested);
-    buttonLayout->addWidget(newButton_);
-    
-    openButton_ = new QPushButton(tr("Open"));
-    openButton_->setToolTip(tr("Open existing macro"));
-    connect(openButton_, &QPushButton::clicked, this, &MacroInfoPanel::openRequested);
-    buttonLayout->addWidget(openButton_);
-    
-    mainLayout->addLayout(buttonLayout);
     
     // Scroll area for info
     QScrollArea* scrollArea = new QScrollArea();
@@ -173,7 +156,6 @@ void MacroInfoPanel::setupUi()
 	scrollLayout->addWidget(
 		breakdownGroup);
 	
-    scrollLayout->addWidget(breakdownGroup);
     
     // Display info group
     QGroupBox* displayGroup = new QGroupBox(tr("Display Compatibility"));

@@ -165,18 +165,116 @@ QWidget* SettingsDialog::createPlaybackTab()
     hotkeyLayout->addRow(tr("Pause/Resume:"), playPauseKeyCombo_);
     
     playCancelKeyCombo_ = createKeyCombo();
-    hotkeyLayout->addRow(tr("Cancel Playback:"), playCancelKeyCombo_);
-    
-    layout->addWidget(hotkeyGroup);
+	hotkeyLayout->addRow(
+		tr("Cancel Playback:"),
+		playCancelKeyCombo_);
+
+	/*
+	 * F9 and F10 are shared by the active workspace.
+	 * The separate playback-cancel hotkey is obsolete.
+	 */
+	playStartKeyCombo_->setCurrentText(
+		tr("F9"));
+
+	playStartKeyCombo_->setEnabled(
+		false);
+
+	playStartKeyCombo_->setToolTip(
+		tr("F9 starts or stops the active workspace"));
+
+	playPauseKeyCombo_->setCurrentText(
+		tr("F10"));
+
+	playPauseKeyCombo_->setEnabled(
+		false);
+
+	playPauseKeyCombo_->setToolTip(
+		tr("F10 pauses or resumes the active workspace"));
+
+	playCancelKeyCombo_->setCurrentText(
+		tr("F12"));
+
+	playCancelKeyCombo_->setEnabled(
+		false);
+
+	playCancelKeyCombo_->setToolTip(
+		tr(
+			"Playback is stopped with F9. "
+			"The separate cancel key is obsolete."));
+
+	layout->addWidget(hotkeyGroup);
     
     // Playback options
     QGroupBox* optionsGroup = new QGroupBox(tr("Default Options"));
     QFormLayout* optionsLayout = new QFormLayout(optionsGroup);
     
-    defaultLoopsSpin_ = new QSpinBox();
-    defaultLoopsSpin_->setRange(1, 9999);
-    defaultLoopsSpin_->setValue(1);
-    optionsLayout->addRow(tr("Default loop count:"), defaultLoopsSpin_);
+    QWidget* defaultLoopsWidget =
+		new QWidget(
+			optionsGroup);
+
+	QHBoxLayout* defaultLoopsLayout =
+		new QHBoxLayout(
+			defaultLoopsWidget);
+
+	defaultLoopsLayout->setContentsMargins(
+		0,
+		0,
+		0,
+		0);
+
+	defaultLoopsLayout->setSpacing(
+		8);
+
+	defaultLoopsSpin_ =
+		new QSpinBox(
+			defaultLoopsWidget);
+
+	defaultLoopsSpin_->setRange(
+		1,
+		9999);
+
+	defaultLoopsSpin_->setValue(
+		1);
+
+	/*
+	 * Remove the small built-in up/down buttons. The value can still
+	 * be entered directly with the keyboard.
+	 */
+	defaultLoopsSpin_->setButtonSymbols(
+		QAbstractSpinBox::NoButtons);
+
+	defaultLoopsSpin_->setMinimumWidth(
+		100);
+
+	defaultLoopsLayout->addWidget(
+		defaultLoopsSpin_);
+
+	infiniteLoopsButton_ =
+		new QPushButton(
+			tr("Set ∞"),
+			defaultLoopsWidget);
+
+	infiniteLoopsButton_->setProperty(
+		"compact",
+		true);
+
+	infiniteLoopsButton_->setToolTip(
+		tr("Use infinite playback as the default"));
+
+	connect(
+		infiniteLoopsButton_,
+		&QPushButton::clicked,
+		this,
+		&SettingsDialog::toggleDefaultLoopsInfinite);
+
+	defaultLoopsLayout->addWidget(
+		infiniteLoopsButton_);
+
+	defaultLoopsLayout->addStretch();
+
+	optionsLayout->addRow(
+		tr("Default loop count:"),
+		defaultLoopsWidget);
     
     dryRunDefaultCheck_ = new QCheckBox(tr("Default to dry-run mode"));
     dryRunDefaultCheck_->setChecked(true);
@@ -417,6 +515,44 @@ QWidget* SettingsDialog::createGeneralTab()
     return tab;
 }
 
+void SettingsDialog::toggleDefaultLoopsInfinite()
+{
+    defaultLoopsInfinite_ =
+        !defaultLoopsInfinite_;
+
+    defaultLoopsSpin_->setEnabled(
+        !defaultLoopsInfinite_);
+
+    if (defaultLoopsInfinite_)
+    {
+        defaultLoopsSpin_->setSpecialValueText(
+            tr("∞"));
+
+        defaultLoopsSpin_->setValue(
+            defaultLoopsSpin_->minimum());
+
+        infiniteLoopsButton_->setText(
+            tr("Set Finite"));
+
+        infiniteLoopsButton_->setToolTip(
+            tr("Use a finite playback loop count"));
+    }
+    else
+    {
+        defaultLoopsSpin_->setSpecialValueText(
+            QString());
+
+        defaultLoopsSpin_->setValue(
+            1);
+
+        infiniteLoopsButton_->setText(
+            tr("Set ∞"));
+
+        infiniteLoopsButton_->setToolTip(
+            tr("Use infinite playback as the default"));
+    }
+}
+
 void SettingsDialog::loadSettings()
 {
     // Set recording hotkeys
@@ -463,7 +599,61 @@ void SettingsDialog::loadSettings()
         }
     }
     
-    defaultLoopsSpin_->setValue(settings_.defaultLoops);
+    defaultLoopsInfinite_ =
+		settings_.defaultLoops == 0;
+
+	if (defaultLoopsInfinite_)
+	{
+		defaultLoopsSpin_->setSpecialValueText(
+			tr("∞"));
+
+		defaultLoopsSpin_->setValue(
+			defaultLoopsSpin_->minimum());
+
+		defaultLoopsSpin_->setEnabled(
+			false);
+
+		infiniteLoopsButton_->setText(
+			tr("Set Finite"));
+
+		infiniteLoopsButton_->setToolTip(
+			tr("Use a finite playback loop count"));
+	}
+	else
+	{
+		defaultLoopsSpin_->setSpecialValueText(
+			QString());
+
+		defaultLoopsSpin_->setValue(
+			settings_.defaultLoops);
+
+		defaultLoopsSpin_->setEnabled(
+			true);
+
+		infiniteLoopsButton_->setText(
+			tr("Set ∞"));
+
+		infiniteLoopsButton_->setToolTip(
+			tr("Use infinite playback as the default"));
+	}
+
+	QSettings playbackSettings(
+		"InputPlay",
+		"Studio");
+
+	dryRunDefaultCheck_->setChecked(
+		playbackSettings.value(
+			"playback/dryRunDefault",
+			true)
+			.toBool());
+
+	confirmRealPlaybackCheck_->setChecked(
+		playbackSettings.value(
+			"playback/confirmRealPlayback",
+			true)
+			.toBool());
+			
+	
     
     // Load QSettings for GUI-specific settings
     QSettings qsettings("InputPlay", "Studio");
@@ -483,10 +673,29 @@ void SettingsDialog::saveSettings()
     settings_.playPauseKey = playPauseKeyCombo_->currentData().toInt();
     settings_.playCancelKey = playCancelKeyCombo_->currentData().toInt();
     
-    settings_.defaultLoops = defaultLoopsSpin_->value();
+    settings_.defaultLoops =
+		defaultLoopsInfinite_
+		? 0
+		: defaultLoopsSpin_->value();
+
     
     // Save QSettings for GUI-specific settings
     QSettings qsettings("InputPlay", "Studio");
+	
+	qsettings.setValue(
+		"playback/defaultLoops",
+		defaultLoopsInfinite_
+		? 0
+		: defaultLoopsSpin_->value());
+
+	qsettings.setValue(
+		"playback/dryRunDefault",
+		dryRunDefaultCheck_->isChecked());
+
+	qsettings.setValue(
+		"playback/confirmRealPlayback",
+		confirmRealPlaybackCheck_->isChecked());
+	
     qsettings.setValue("hotkeysEnabled", globalHotkeysCheck_->isChecked());
     qsettings.setValue("showTrayIcon", showTrayIconCheck_->isChecked());
     qsettings.setValue("minimizeToTray", minimizeToTrayCheck_->isChecked());
@@ -545,8 +754,24 @@ void SettingsDialog::resetToDefaults()
         }
     }
     
-    defaultLoopsSpin_->setValue(1);
-    
+    defaultLoopsInfinite_ =
+		false;
+
+	defaultLoopsSpin_->setSpecialValueText(
+		QString());
+
+	defaultLoopsSpin_->setEnabled(
+		true);
+
+	defaultLoopsSpin_->setValue(
+		1);
+
+	infiniteLoopsButton_->setText(
+		tr("Set ∞"));
+
+	infiniteLoopsButton_->setToolTip(
+		tr("Use infinite playback as the default"));
+		
     // Reset appearance
     themeCombo_->setCurrentIndex(0);
     accentColorCombo_->setCurrentIndex(0);

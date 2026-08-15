@@ -36,6 +36,7 @@ private slots:
     void onAccentChanged();
 
 private:
+	void toggleDefaultLoopsInfinite();
     void setupUi();
     QWidget* createRecordingTab();
     QWidget* createPlaybackTab();
@@ -65,6 +66,8 @@ private:
     QComboBox* playPauseKeyCombo_ = nullptr;
     QComboBox* playCancelKeyCombo_ = nullptr;
     QSpinBox* defaultLoopsSpin_ = nullptr;
+	QPushButton* infiniteLoopsButton_ = nullptr;
+	bool defaultLoopsInfinite_ = false;
     QCheckBox* dryRunDefaultCheck_ = nullptr;
     QCheckBox* confirmRealPlaybackCheck_ = nullptr;
     

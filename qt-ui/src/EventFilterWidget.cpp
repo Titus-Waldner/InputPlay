@@ -4,7 +4,6 @@
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QComboBox>
-#include <QPushButton>
 #include <QLabel>
 
 EventFilterWidget::EventFilterWidget(QWidget* parent)
@@ -59,13 +58,7 @@ void EventFilterWidget::setupUi()
     connect(typeFilterCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &EventFilterWidget::onTypeFilterChanged);
     layout->addWidget(typeFilterCombo_);
-    
-    // Clear filter button
-    clearButton_ = new QPushButton(tr("Clear"));
-    clearButton_->setToolTip(tr("Clear all filters"));
-    connect(clearButton_, &QPushButton::clicked, this, &EventFilterWidget::clear);
-    layout->addWidget(clearButton_);
-    
+
     layout->addStretch();
 }
 

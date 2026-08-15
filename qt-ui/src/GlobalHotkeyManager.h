@@ -1,23 +1,25 @@
 #pragma once
 
+#include <QAbstractNativeEventFilter>
+#include <QByteArray>
+#include <QList>
 #include <QObject>
-#include <QTimer>
+#include <QString>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
 
-class GlobalHotkeyManager : public QObject
+class GlobalHotkeyManager
+    : public QObject,
+      public QAbstractNativeEventFilter
 {
     Q_OBJECT
 
 public:
-    explicit GlobalHotkeyManager(QObject* parent = nullptr);
-    ~GlobalHotkeyManager() override;
-
-    // Hotkey IDs
-    enum HotkeyId {
+    enum HotkeyId
+    {
         RecordStartStop = 1,
         RecordPause = 2,
         PlaybackStartStop = 3,
@@ -25,15 +27,40 @@ public:
         EmergencyStop = 5
     };
 
-    bool registerHotkey(HotkeyId id, int virtualKey, Qt::KeyboardModifiers modifiers = Qt::NoModifier);
-    bool unregisterHotkey(HotkeyId id);
-    void unregisterAll();
-    
-    bool isEnabled() const { return enabled_; }
-    void setEnabled(bool enabled);
+    explicit GlobalHotkeyManager(
+        QObject* parent = nullptr);
 
-    static QString keyName(int virtualKey);
-    static int keyFromName(const QString& name);
+    ~GlobalHotkeyManager() override;
+
+    bool registerHotkey(
+        HotkeyId id,
+        int virtualKey,
+        Qt::KeyboardModifiers modifiers =
+            Qt::NoModifier);
+
+    bool unregisterHotkey(
+        HotkeyId id);
+
+    void unregisterAll();
+
+    bool isEnabled() const
+    {
+        return enabled_;
+    }
+
+    void setEnabled(
+        bool enabled);
+
+    static QString keyName(
+        int virtualKey);
+
+    static int keyFromName(
+        const QString& name);
+
+    bool nativeEventFilter(
+        const QByteArray& eventType,
+        void* message,
+        qintptr* result) override;
 
 signals:
     void recordStartStopTriggered();
@@ -42,20 +69,21 @@ signals:
     void playbackPauseTriggered();
     void emergencyStopTriggered();
 
-private slots:
-    void pollHotkeys();
-
 private:
-    QTimer* pollTimer_ = nullptr;
-    bool enabled_ = false;
-    
+    void handleHotkey(
+        int id);
+
 #ifdef _WIN32
-    struct RegisteredHotkey {
-        int id;
+    struct RegisteredHotkey
+    {
+        HotkeyId id;
         int virtualKey;
         UINT modifiers;
         bool registered;
     };
+
     QList<RegisteredHotkey> registeredHotkeys_;
 #endif
+
+    bool enabled_ = false;
 };

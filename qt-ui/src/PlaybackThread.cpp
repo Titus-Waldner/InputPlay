@@ -72,6 +72,69 @@ bool PlaybackThread::isRunning() const
     return QThread::isRunning();
 }
 
+bool PlaybackThread::waitForDelay(
+    std::uint64_t delayMicroseconds)
+{
+    /*
+     * Sleep in short intervals so Stop can interrupt playback even
+     * when the recording contains a long delay between two events.
+     */
+    std::uint64_t remainingMilliseconds =
+        delayMicroseconds / 1000;
+
+    while (remainingMilliseconds > 0)
+    {
+        {
+            QMutexLocker locker(
+                &mutex_);
+
+            if (shouldStop_
+                || controller_->cancellationRequested())
+            {
+                return false;
+            }
+        }
+
+        const unsigned long sleepMilliseconds =
+            static_cast<unsigned long>(
+                qMin<std::uint64_t>(
+                    remainingMilliseconds,
+                    10));
+
+        msleep(
+            sleepMilliseconds);
+
+        remainingMilliseconds -=
+            sleepMilliseconds;
+    }
+
+    /*
+     * Preserve sub-millisecond delays where possible.
+     */
+    const std::uint64_t remainingMicroseconds =
+        delayMicroseconds % 1000;
+
+    if (remainingMicroseconds > 0)
+    {
+        usleep(
+            static_cast<unsigned long>(
+                remainingMicroseconds));
+    }
+
+    {
+        QMutexLocker locker(
+            &mutex_);
+
+        if (shouldStop_
+            || controller_->cancellationRequested())
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void PlaybackThread::run()
 {
     emit playbackStarted();
@@ -183,11 +246,51 @@ void PlaybackThread::run()
                         if (currentSpeed > 0.0) {
                             delayUs = static_cast<std::uint64_t>(delayUs / currentSpeed);
                         }
-                        // Convert to milliseconds for sleep
-                        unsigned long delayMs = static_cast<unsigned long>(delayUs / 1000);
-                        if (delayMs > 0) {
-                            msleep(delayMs);
-                        }
+                        if (!waitForDelay(delayUs))
+						{
+							result.code =
+								PlaybackResultCode::Cancelled;
+
+							result.completedLoops =
+								loop - 1;
+
+							result.completedEvents =
+								i + 1;
+
+							backend_->releaseAll();
+
+							PlaybackProgress cancelledProgress;
+
+							cancelledProgress.state =
+								PlaybackState::Cancelled;
+
+							cancelledProgress.currentLoop =
+								loop;
+
+							cancelledProgress.totalLoops =
+								options_.loopCount;
+
+							cancelledProgress.infiniteLoops =
+								options_.infiniteLoops;
+
+							cancelledProgress.completedEvents =
+								i + 1;
+
+							cancelledProgress.totalEvents =
+								totalEvents;
+
+							emit progressChanged(
+								cancelledProgress);
+
+							emit playbackCompleted(
+								result);
+
+							emit playbackStopped();
+
+							backend_.reset();
+
+							return;
+						}
                     }
                 }
                 
@@ -270,16 +373,65 @@ void PlaybackThread::setDryRun(bool dryRun)
     dryRun_ = dryRun;
 }
 
-void PlaybackThread::setLooping(bool looping)
+void PlaybackThread::setLooping(
+    bool looping)
 {
-    QMutexLocker locker(&mutex_);
-    looping_ = looping;
-    options_.infiniteLoops = looping;
-    if (looping) {
-        options_.loopCount = 0;  // Infinite loops when looping is enabled
-    } else {
-        options_.loopCount = 1;  // Single playback
+    QMutexLocker locker(
+        &mutex_);
+
+    looping_ =
+        looping;
+
+    options_.infiniteLoops =
+        looping;
+
+    if (looping)
+    {
+        options_.loopCount =
+            0;
     }
+}
+
+void PlaybackThread::setLoopCount(
+    int loopCount)
+{
+    QMutexLocker locker(
+        &mutex_);
+
+    if (loopCount < 1)
+    {
+        loopCount =
+            1;
+    }
+
+    looping_ =
+        false;
+
+    options_.infiniteLoops =
+        false;
+
+    options_.loopCount =
+        static_cast<unsigned int>(
+            loopCount);
+}
+
+void PlaybackThread::startConfiguredPlayback()
+{
+    /*
+     * A cancelled PlaybackController remains cancelled until reset.
+     * Reset both cancellation sources before every new GUI playback.
+     */
+    {
+        QMutexLocker locker(
+            &mutex_);
+
+        shouldStop_ =
+            false;
+
+        controller_->reset();
+    }
+
+    start();
 }
 
 void PlaybackThread::pause()
@@ -296,6 +448,9 @@ void PlaybackThread::resume()
 
 void PlaybackThread::stop()
 {
+    /*
+     * Request cancellation here. The worker thread emits
+     * playbackStopped only after it has actually exited playback.
+     */
     requestCancel();
-    emit playbackStopped();
 }

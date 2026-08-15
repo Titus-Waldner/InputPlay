@@ -11,6 +11,7 @@
 #include <QSpinBox>
 #include <QGroupBox>
 #include <QTimer>
+#include <QStyle>
 
 RecordingWidget::RecordingWidget(QWidget* parent)
     : QWidget(parent)
@@ -41,7 +42,13 @@ RecordingWidget::~RecordingWidget()
 
 bool RecordingWidget::isRecording() const
 {
-    return recordingThread_->isRunning();
+    return countdownActive_
+        || recordingThread_->isRunning();
+}
+
+bool RecordingWidget::isCountingDown() const
+{
+    return countdownActive_;
 }
 
 bool RecordingWidget::isPaused() const
@@ -133,14 +140,20 @@ void RecordingWidget::setupUi()
     
     mainLayout->addWidget(optionsGroup);
     
-    // Control buttons
-    QHBoxLayout* buttonLayout = new QHBoxLayout();
-    buttonLayout->setSpacing(8);
-    buttonLayout->setAlignment(Qt::AlignLeft);
-    
-    recordButton_ =
-    new QPushButton(
-        tr("⏺"));
+
+	// Recording controls.
+	QHBoxLayout* buttonLayout =
+		new QHBoxLayout();
+
+	buttonLayout->setSpacing(
+		8);
+
+	buttonLayout->setAlignment(
+		Qt::AlignLeft);
+
+	recordButton_ =
+		new QPushButton(
+			tr("● Record"));
 
 	recordButton_->setProperty(
 		"primary",
@@ -149,11 +162,11 @@ void RecordingWidget::setupUi()
 	recordButton_->setMinimumHeight(
 		40);
 
-	recordButton_->setFixedWidth(
-		50);
+	recordButton_->setMinimumWidth(
+		110);
 
 	recordButton_->setToolTip(
-		tr("Start Recording"));
+		tr("Start recording"));
 
 	connect(
 		recordButton_,
@@ -163,30 +176,49 @@ void RecordingWidget::setupUi()
 
 	buttonLayout->addWidget(
 		recordButton_);
-    
-    pauseButton_ = new QPushButton(tr("⏸"));
-    pauseButton_->setMinimumHeight(40);
-    pauseButton_->setFixedWidth(50);
-    pauseButton_->setToolTip(tr("Pause/Resume Recording"));
-    connect(pauseButton_, &QPushButton::clicked, this, &RecordingWidget::togglePause);
-    buttonLayout->addWidget(pauseButton_);
-    
-    stopButton_ =
+
+	pauseButton_ =
 		new QPushButton(
-			tr("⏹"));
+			tr("⏸ Pause"));
+
+	pauseButton_->setProperty(
+		"primary",
+		false);
+
+	pauseButton_->setMinimumHeight(
+		40);
+
+	pauseButton_->setMinimumWidth(
+		110);
+
+	pauseButton_->setToolTip(
+		tr("Pause or resume recording"));
+
+	connect(
+		pauseButton_,
+		&QPushButton::clicked,
+		this,
+		&RecordingWidget::togglePause);
+
+	buttonLayout->addWidget(
+		pauseButton_);
+
+	stopButton_ =
+		new QPushButton(
+			tr("■ Stop"));
 
 	stopButton_->setProperty(
 		"primary",
-		true);
+		false);
 
 	stopButton_->setMinimumHeight(
 		40);
 
-	stopButton_->setFixedWidth(
-		50);
+	stopButton_->setMinimumWidth(
+		110);
 
 	stopButton_->setToolTip(
-		tr("Stop Recording"));
+		tr("Stop and keep the recording"));
 
 	connect(
 		stopButton_,
@@ -196,22 +228,45 @@ void RecordingWidget::setupUi()
 
 	buttonLayout->addWidget(
 		stopButton_);
-    
-    cancelButton_ = new QPushButton(tr("✕"));
-    cancelButton_->setMinimumHeight(40);
-    cancelButton_->setFixedWidth(50);
-    cancelButton_->setToolTip(tr("Cancel Recording"));
-    connect(cancelButton_, &QPushButton::clicked, this, &RecordingWidget::cancelRecording);
-    buttonLayout->addWidget(cancelButton_);
-    
-    mainLayout->addLayout(buttonLayout);
+
+	cancelButton_ =
+		new QPushButton(
+			tr("× Cancel"));
+
+	cancelButton_->setProperty(
+		"primary",
+		false);
+
+	cancelButton_->setMinimumHeight(
+		40);
+
+	cancelButton_->setMinimumWidth(
+		110);
+
+	cancelButton_->setToolTip(
+		tr("Cancel and discard the recording"));
+
+	connect(
+		cancelButton_,
+		&QPushButton::clicked,
+		this,
+		&RecordingWidget::cancelRecording);
+
+	buttonLayout->addWidget(
+		cancelButton_);
+
+	buttonLayout->addStretch();
+
+	mainLayout->addLayout(
+		buttonLayout);
+		
     
     // Hotkey hints
     QLabel* hotkeyHint =
     new QLabel(
         tr(
-            "Tip: Use F9 to start/stop, "
-            "F10 to pause "
+            "Tip: F9 starts/stops and F10 pauses/resumes "
+			"the active workspace"
             "(when enabled in Settings)"));
 
 	hotkeyHint->setProperty(
@@ -236,37 +291,142 @@ void RecordingWidget::updateButtonStates()
     const bool paused =
         recordingThread_->isPaused();
 
+    const bool countdown =
+        countdownActive_;
+
+    const bool active =
+        recording
+        || countdown;
+
+    /*
+     * Ready:
+     *   Record is highlighted and enabled.
+     *
+     * Countdown:
+     *   Cancel is highlighted and enabled.
+     *
+     * Recording:
+     *   Pause, Stop, and Cancel are highlighted and enabled.
+     *
+     * Paused:
+     *   Resume, Stop, and Cancel are highlighted and enabled.
+     */
+    recordButton_->setProperty(
+        "primary",
+        !active);
+
+    pauseButton_->setProperty(
+        "primary",
+        recording);
+
+    stopButton_->setProperty(
+        "primary",
+        recording);
+
+    cancelButton_->setProperty(
+        "primary",
+        active);
+
+    // Apply changed dynamic properties to the stylesheet.
+    recordButton_->style()->unpolish(
+        recordButton_);
+
+    recordButton_->style()->polish(
+        recordButton_);
+
+    pauseButton_->style()->unpolish(
+        pauseButton_);
+
+    pauseButton_->style()->polish(
+        pauseButton_);
+
+    stopButton_->style()->unpolish(
+        stopButton_);
+
+    stopButton_->style()->polish(
+        stopButton_);
+
+    cancelButton_->style()->unpolish(
+        cancelButton_);
+
+    cancelButton_->style()->polish(
+        cancelButton_);
+
+    /*
+     * Countdown is cancellable, but it cannot be paused or stopped
+     * as a completed recording because capture has not started yet.
+     */
     recordButton_->setEnabled(
-        !recording);
+        !active);
 
     pauseButton_->setEnabled(
         recording);
-
-    pauseButton_->setText(
-        paused
-        ? tr("▶")
-        : tr("⏸"));
 
     stopButton_->setEnabled(
         recording);
 
     cancelButton_->setEnabled(
-        recording);
+        active);
+
+    recordButton_->setText(
+        tr("● Record"));
+
+    if (paused)
+    {
+        pauseButton_->setText(
+            tr("▶ Resume"));
+
+        pauseButton_->setToolTip(
+            tr("Resume recording"));
+    }
+    else
+    {
+        pauseButton_->setText(
+            tr("⏸ Pause"));
+
+        pauseButton_->setToolTip(
+            tr("Pause recording"));
+    }
+
+    stopButton_->setText(
+        tr("■ Stop"));
+
+    cancelButton_->setText(
+        countdown
+        ? tr("× Cancel Countdown")
+        : tr("× Cancel"));
+
+    if (countdown)
+    {
+        cancelButton_->setToolTip(
+            tr("Cancel the recording countdown"));
+    }
+    else
+    {
+        cancelButton_->setToolTip(
+            tr("Cancel and discard the recording"));
+    }
 
     captureMouseCheck_->setEnabled(
-        !recording);
+        !active);
 
     captureKeyboardCheck_->setEnabled(
-        !recording);
+        !active);
 
     countdownCheck_->setEnabled(
-        !recording);
+        !active);
 
     countdownSpin_->setEnabled(
-        !recording
+        !active
         && countdownCheck_->isChecked());
 
-    if (!recording)
+    if (countdown)
+    {
+        DarkStyle::setTone(
+            recordingIndicator_,
+            "accentLight");
+    }
+    else if (!recording)
     {
         DarkStyle::setTone(
             recordingIndicator_,
@@ -284,29 +444,49 @@ void RecordingWidget::updateButtonStates()
             recordingIndicator_,
             "accent");
     }
+
+    recordButton_->update();
+    pauseButton_->update();
+    stopButton_->update();
+    cancelButton_->update();
 }
 
 void RecordingWidget::startRecording()
 {
-    if (recordingThread_->isRunning()) {
+    if (countdownActive_
+        || recordingThread_->isRunning())
+    {
         return;
     }
-    
-    // Set recording options
+
+    // Apply the selected recording options.
     RecordingOptions options;
-    options.captureMouse = captureMouseCheck_->isChecked();
-    options.captureKeyboard = captureKeyboardCheck_->isChecked();
-    options.waitForStartKey = false; // GUI handles start trigger
-    
-    recordingThread_->setOptions(options);
-    
-    // Reset display
-    eventCountLabel_->setText(tr("Events: 0"));
-    durationLabel_->setText(tr("Duration: 0:00.000"));
-    
-    if (countdownCheck_->isChecked()) {
+
+    options.captureMouse =
+        captureMouseCheck_->isChecked();
+
+    options.captureKeyboard =
+        captureKeyboardCheck_->isChecked();
+
+    // The GUI controls when capture begins.
+    options.waitForStartKey = false;
+
+    recordingThread_->setOptions(
+        options);
+
+    // Reset the recording display.
+    eventCountLabel_->setText(
+        tr("Events: 0"));
+
+    durationLabel_->setText(
+        tr("Duration: 0:00.000"));
+
+    if (countdownCheck_->isChecked())
+    {
         startCountdown();
-    } else {
+    }
+    else
+    {
         recordingThread_->startRecording();
         updateButtonStates();
     }
@@ -315,50 +495,127 @@ void RecordingWidget::startRecording()
 void RecordingWidget::startCountdown()
 {
     countdownValue_ =
-    countdownSpin_->value();
+        countdownSpin_->value();
 
-	statusLabel_->setText(
-		tr("Starting in %1...")
-			.arg(
-				countdownValue_));
+    countdownActive_ =
+        true;
 
-	DarkStyle::setTone(
-		recordingIndicator_,
-		"accentLight");
-		
-	recordButton_->setEnabled(false);
-		
-    captureMouseCheck_->setEnabled(false);
-    captureKeyboardCheck_->setEnabled(false);
-    countdownCheck_->setEnabled(false);
-    countdownSpin_->setEnabled(false);
-    
-    countdownTimer_->start(1000);
+    statusLabel_->setText(
+        tr("Starting in %1...")
+            .arg(
+                countdownValue_));
+
+    emit statusChanged(
+        tr("Recording starts in %1 seconds")
+            .arg(
+                countdownValue_));
+
+    updateButtonStates();
+
+    countdownTimer_->start(
+        1000);
+}
+
+void RecordingWidget::cancelCountdown()
+{
+    if (!countdownActive_)
+    {
+        return;
+    }
+
+    countdownTimer_->stop();
+
+    countdownActive_ =
+        false;
+
+    countdownValue_ =
+        0;
+
+    statusLabel_->setText(
+        tr("Recording cancelled"));
+
+    updateButtonStates();
+
+    emit recordingCancelled();
+
+    emit statusChanged(
+        tr("Recording cancelled"));
 }
 
 void RecordingWidget::onCountdownTick()
 {
-    countdownValue_--;
-    
-    if (countdownValue_ > 0) {
-        statusLabel_->setText(tr("Starting in %1...").arg(countdownValue_));
-    } else {
+    if (!countdownActive_)
+    {
         countdownTimer_->stop();
-        statusLabel_->setText(tr("Recording..."));
-        recordingThread_->startRecording();
-        updateButtonStates();
+        return;
     }
+
+    --countdownValue_;
+
+    if (countdownValue_ > 0)
+    {
+        statusLabel_->setText(
+            tr("Starting in %1...")
+                .arg(
+                    countdownValue_));
+
+        emit statusChanged(
+            tr("Recording starts in %1 seconds")
+                .arg(
+                    countdownValue_));
+
+        return;
+    }
+
+    countdownTimer_->stop();
+
+    countdownActive_ =
+        false;
+
+    countdownValue_ =
+        0;
+
+    statusLabel_->setText(
+        tr("Recording..."));
+
+    recordingThread_->startRecording();
+
+    updateButtonStates();
 }
 
 void RecordingWidget::stopRecording()
 {
-    countdownTimer_->stop();
+    /*
+     * A countdown has not created a recording yet, so stopping during
+     * countdown is equivalent to cancelling the countdown.
+     */
+    if (countdownActive_)
+    {
+        cancelCountdown();
+        return;
+    }
+
+    if (!recordingThread_->isRunning())
+    {
+        return;
+    }
+
     recordingThread_->stopRecording();
 }
 
 void RecordingWidget::cancelRecording()
 {
-    countdownTimer_->stop();
+    if (countdownActive_)
+    {
+        cancelCountdown();
+        return;
+    }
+
+    if (!recordingThread_->isRunning())
+    {
+        return;
+    }
+
     recordingThread_->cancelRecording();
 }
 
@@ -406,10 +663,20 @@ void RecordingWidget::onRecordingProgress(const RecordingProgress& progress)
     updateButtonStates();
 }
 
-void RecordingWidget::onRecordingStopped(const RecordingResult& result)
+void RecordingWidget::onRecordingStopped(
+    const RecordingResult& result)
 {
+    countdownTimer_->stop();
+
+    countdownActive_ =
+        false;
+
+    countdownValue_ =
+        0;
+
     updateButtonStates();
-    
+
+    // Keep the remainder of the existing function here.    
     if (result.code == RecordingResultCode::Completed) {
         statusLabel_->setText(tr("Recording completed - %1 events").arg(result.eventCount));
         emit recordingCompleted(result.eventCount > 0);

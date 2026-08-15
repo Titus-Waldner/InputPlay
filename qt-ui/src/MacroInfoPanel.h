@@ -5,7 +5,6 @@
 #include <QWidget>
 
 class QLabel;
-class QPushButton;
 class QVBoxLayout;
 
 class MacroInfoPanel : public QWidget
@@ -17,10 +16,6 @@ public:
     
     void setRecording(Recording* recording, const QString& filePath);
     void refresh();
-
-signals:
-    void newRequested();
-    void openRequested();
 
 private:
     void setupUi();
@@ -53,7 +48,4 @@ private:
     QLabel* monitorCountLabel_ = nullptr;
     QLabel* virtualDesktopLabel_ = nullptr;
     
-    // Action buttons
-    QPushButton* newButton_ = nullptr;
-    QPushButton* openButton_ = nullptr;
 };

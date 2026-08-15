@@ -8,7 +8,6 @@
 class QLineEdit;
 class QComboBox;
 class QCheckBox;
-class QPushButton;
 
 class EventFilterWidget : public QWidget
 {
@@ -36,7 +35,6 @@ private:
     
     QLineEdit* searchEdit_ = nullptr;
     QComboBox* typeFilterCombo_ = nullptr;
-    QPushButton* clearButton_ = nullptr;
     
     // Type filter checkboxes (in dropdown or separate)
     QSet<EventType> enabledTypes_;

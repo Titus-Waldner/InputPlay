@@ -38,7 +38,13 @@ public:
     void setRecording(Recording* recording);
     void setSpeed(double speed);
     void setDryRun(bool dryRun);
-    void setLooping(bool looping);
+    void setLooping(
+    bool looping);
+
+	void setLoopCount(
+		int loopCount);
+
+	void startConfiguredPlayback();
 
 public slots:
     void pause();
@@ -62,6 +68,8 @@ protected:
     void run() override;
 
 private:
+	bool waitForDelay(
+		std::uint64_t delayMicroseconds);
     Recording recording_;
     Recording* recordingPtr_ = nullptr;  // Non-owning pointer for GUI mode
     Settings settings_;
