@@ -28,6 +28,7 @@
 #include "RecordingFile.h"
 #include "SettingsFile.h"
 
+#include <QSignalBlocker>
 #include <QApplication>
 #include <QMenuBar>
 #include <QMenu>
@@ -2074,9 +2075,24 @@ void MainWindow::showEditorWorkspace()
         return;
     }
 
+    if (recordingWidget_
+        && recordingWidget_->isRecording())
+    {
+        if (statusLabel_)
+        {
+            statusLabel_->setText(
+                tr(
+                    "Stop or cancel recording before switching "
+                    "to Playback & Editing"));
+        }
+
+        return;
+    }
+
     workspaceTabs_->setCurrentIndex(
         EditorWorkspaceIndex);
 }
+
 
 void MainWindow::showRecordingWorkspace()
 {
@@ -2085,11 +2101,20 @@ void MainWindow::showRecordingWorkspace()
         return;
     }
 
-    /*
-     * Selecting this tab only displays the recording setup.
-     * Recording begins only when the user presses the Record
-     * button inside RecordingWidget.
-     */
+    if (playbackThread_
+        && playbackThread_->isRunning())
+    {
+        if (statusLabel_)
+        {
+            statusLabel_->setText(
+                tr(
+                    "Stop playback before switching "
+                    "to the Recording workspace"));
+        }
+
+        return;
+    }
+
     workspaceTabs_->setCurrentIndex(
         RecordingWorkspaceIndex);
 }
@@ -2097,6 +2122,77 @@ void MainWindow::showRecordingWorkspace()
 void MainWindow::onWorkspaceTabChanged(
     int index)
 {
+    if (!workspaceTabs_
+        || restoringWorkspaceTab_)
+    {
+        return;
+    }
+
+    /*
+     * Keep playback controls in context while playback is active.
+     */
+    if (index == RecordingWorkspaceIndex
+        && playbackThread_
+        && playbackThread_->isRunning())
+    {
+        restoringWorkspaceTab_ =
+            true;
+
+        {
+            const QSignalBlocker blocker(
+                workspaceTabs_);
+
+            workspaceTabs_->setCurrentIndex(
+                EditorWorkspaceIndex);
+        }
+
+        restoringWorkspaceTab_ =
+            false;
+
+        if (statusLabel_)
+        {
+            statusLabel_->setText(
+                tr(
+                    "Stop playback before switching "
+                    "to the Recording workspace"));
+        }
+
+        return;
+    }
+
+    /*
+     * Keep recording controls in context during countdown,
+     * recording, or pause.
+     */
+    if (index == EditorWorkspaceIndex
+        && recordingWidget_
+        && recordingWidget_->isRecording())
+    {
+        restoringWorkspaceTab_ =
+            true;
+
+        {
+            const QSignalBlocker blocker(
+                workspaceTabs_);
+
+            workspaceTabs_->setCurrentIndex(
+                RecordingWorkspaceIndex);
+        }
+
+        restoringWorkspaceTab_ =
+            false;
+
+        if (statusLabel_)
+        {
+            statusLabel_->setText(
+                tr(
+                    "Stop or cancel recording before switching "
+                    "to Playback & Editing"));
+        }
+
+        return;
+    }
+
     if (!statusLabel_)
     {
         return;
@@ -2111,7 +2207,12 @@ void MainWindow::onWorkspaceTabChanged(
     if (recordingWidget_
         && recordingWidget_->isRecording())
     {
-        if (recordingWidget_->isPaused())
+        if (recordingWidget_->isCountingDown())
+        {
+            statusLabel_->setText(
+                tr("Recording countdown in progress"));
+        }
+        else if (recordingWidget_->isPaused())
         {
             statusLabel_->setText(
                 tr("Recording paused"));

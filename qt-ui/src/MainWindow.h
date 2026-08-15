@@ -179,6 +179,7 @@ private:
     Settings settings_;
     QString currentFilePath_;
     bool modified_ = false;
+	bool restoringWorkspaceTab_ = false;
 	
 	// GUI-only playback preferences.
 	bool dryRunDefault_ = true;
