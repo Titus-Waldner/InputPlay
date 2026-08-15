@@ -145,6 +145,66 @@ void PlaybackThread::run()
     } else {
         backend_ = std::make_unique<SendInputBackend>();
     }
+	
+	/*
+	 * Align the cursor with the position captured at the beginning of
+	 * the recording before executing the first recorded event.
+	 */
+	if (alignStart_
+		&& recording_.hasStartingCursorPosition())
+	{
+		InputEvent alignEvent;
+
+		alignEvent.type =
+			EventType::MouseTeleport;
+
+		alignEvent.mouseX =
+			recording_.startingCursorX();
+
+		alignEvent.mouseY =
+			recording_.startingCursorY();
+
+		alignEvent.timestampMicroseconds =
+			0;
+
+		std::string alignErrorMessage;
+
+		if (!backend_->execute(
+				alignEvent,
+				alignErrorMessage))
+		{
+			PlaybackResult result;
+
+			result.code =
+				PlaybackResultCode::BackendFailed;
+
+			result.message =
+				alignErrorMessage;
+
+			result.completedLoops =
+				0;
+
+			result.completedEvents =
+				0;
+
+			const QString errorText =
+				QString::fromStdString(
+					alignErrorMessage);
+
+			emit playbackError(
+				errorText);
+
+			emit error(
+				errorText);
+
+			emit playbackCompleted(
+				result);
+
+			backend_.reset();
+
+			return;
+		}
+	}
     
     // Setup callbacks
     PlaybackCallbacks callbacks;
@@ -371,6 +431,16 @@ void PlaybackThread::setDryRun(bool dryRun)
 {
     QMutexLocker locker(&mutex_);
     dryRun_ = dryRun;
+}
+
+void PlaybackThread::setAlignStart(
+    bool alignStart)
+{
+    QMutexLocker locker(
+        &mutex_);
+
+    alignStart_ =
+        alignStart;
 }
 
 void PlaybackThread::setLooping(

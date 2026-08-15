@@ -465,6 +465,11 @@ bool PlaybackWidget::isDryRun() const
     return dryRunCheck_->isChecked();
 }
 
+bool PlaybackWidget::alignStartEnabled() const
+{
+    return alignStartCheck_->isChecked();
+}
+
 bool PlaybackWidget::isLooping() const
 {
     /*

@@ -44,7 +44,7 @@ public:
     double speed() const;
 
     bool isDryRun() const;
-
+	bool alignStartEnabled() const;
     bool isLooping() const;
 
     int loopCount() const;

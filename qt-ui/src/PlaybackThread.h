@@ -38,6 +38,7 @@ public:
     void setRecording(Recording* recording);
     void setSpeed(double speed);
     void setDryRun(bool dryRun);
+	void setAlignStart(bool alignStart);
     void setLooping(
     bool looping);
 
@@ -77,6 +78,7 @@ private:
     bool dryRun_ = true;
     double speed_ = 1.0;
     bool looping_ = false;
+	bool alignStart_ = true;
     
     std::unique_ptr<PlaybackController> controller_;
     std::unique_ptr<IInputBackend> backend_;

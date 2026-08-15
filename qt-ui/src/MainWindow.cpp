@@ -1095,6 +1095,9 @@ void MainWindow::setupConnections()
 
 			playbackThread_->setDryRun(
 				playbackWidget_->isDryRun());
+			
+			playbackThread_->setAlignStart(
+				playbackWidget_->alignStartEnabled());
 
 			if (playbackWidget_->isLooping())
 			{
