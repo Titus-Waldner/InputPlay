@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
     InputPlayStudio
-    VERSION 1.0.0
+    VERSION 1.0.1
     LANGUAGES CXX
 )
 
@@ -57,6 +57,7 @@ set(SOURCES
     src/RecordingWidget.cpp
     src/GlobalHotkeyManager.cpp
     src/SystemTrayManager.cpp
+	src/PhysicalMouseBlocker.cpp
 )
 
 set(HEADERS
@@ -85,6 +86,7 @@ set(HEADERS
     src/RecordingWidget.h
     src/GlobalHotkeyManager.h
     src/SystemTrayManager.h
+	src/PhysicalMouseBlocker.h
 )
 
 set(RESOURCES

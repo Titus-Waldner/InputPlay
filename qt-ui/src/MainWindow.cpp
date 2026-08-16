@@ -59,6 +59,7 @@
 #include <QJsonObject>
 #include <QFile>
 #include <QTextStream>
+#include "PhysicalMouseBlocker.h"
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -146,7 +147,10 @@ MainWindow::MainWindow(QWidget* parent)
     }
 }
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow()
+{
+    PhysicalMouseBlocker::disable();
+}
 
 void MainWindow::setupUi()
 {
@@ -996,6 +1000,8 @@ void MainWindow::setupConnections()
 		this,
 		[this]()
 		{
+			
+			PhysicalMouseBlocker::disable();
 			playbackWidget_->setPlaybackStopped();
 
 			timelineWidget_->clearPlayhead();
@@ -1103,6 +1109,27 @@ void MainWindow::setupConnections()
 			
 			playbackThread_->setAlignStart(
 				playbackWidget_->alignStartEnabled());
+				
+			if (!playbackWidget_->isDryRun()
+				&& playbackWidget_->blockPhysicalMouseEnabled())
+			{
+				if (!PhysicalMouseBlocker::enable())
+				{
+					playbackWidget_->setPlaybackStopped();
+
+					QMessageBox::warning(
+						this,
+						tr("Mouse Protection Unavailable"),
+						tr(
+							"Windows could not enable physical mouse blocking. "
+							"Playback was not started."));
+
+					statusLabel_->setText(
+						tr("Could not block physical mouse input"));
+
+					return;
+				}
+			}
 
 			if (playbackWidget_->isLooping())
 			{
@@ -1357,7 +1384,7 @@ void MainWindow::showAbout()
         tr(
             "<h2>L33T R3PL4Y</h2>"
             "<p><b>Record. Edit. Replay.</b></p>"
-            "<p>Version 1.0.0</p>"
+            "<p>Version 1.0.1</p>"
             "<p>"
             "A Windows application for recording, editing, "
             "and replaying mouse and keyboard input macros."
@@ -1539,6 +1566,7 @@ bool MainWindow::confirmDiscardChanges()
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+	PhysicalMouseBlocker::disable();
     if (confirmDiscardChanges()) {
         // Save window state
         QSettings settings("InputPlay", "Studio");
@@ -2694,6 +2722,8 @@ void MainWindow::onPlaybackPauseHotkey()
 
 void MainWindow::onEmergencyStop()
 {
+	
+	PhysicalMouseBlocker::disable();
     // Stop everything immediately
     if (recordingWidget_ && recordingWidget_->isRecording()) {
         recordingWidget_->cancelRecording();

@@ -185,6 +185,32 @@ void PlaybackWidget::setupUi()
 		alignStartCheck_);
 		
 	alignStartCheck_->setChecked(true);
+		
+		blockPhysicalMouseCheck_ =
+		new QCheckBox(
+			tr("Block physical mouse input"),
+			this);
+
+	blockPhysicalMouseCheck_->setChecked(
+		true);
+
+	blockPhysicalMouseCheck_->setToolTip(
+		tr(
+			"Prevents physical mouse movement, clicks, and scrolling "
+			"from interfering with real playback. "
+			"F9 and Emergency Stop remain available."));
+
+	blockPhysicalMouseCheck_->setEnabled(
+		!dryRunCheck_->isChecked());
+
+	connect(
+		dryRunCheck_,
+		&QCheckBox::toggled,
+		blockPhysicalMouseCheck_,
+		&QWidget::setDisabled);
+
+	optionsLayout->addWidget(
+		blockPhysicalMouseCheck_);
 	
     optionsLayout->addStretch();
 
@@ -458,6 +484,12 @@ double PlaybackWidget::speed() const
 {
     // Slider is in percentage: 25-400, 100 = 1.0x
     return speedSlider_->value() / 100.0;
+}
+
+bool PlaybackWidget::blockPhysicalMouseEnabled() const
+{
+    return blockPhysicalMouseCheck_
+        && blockPhysicalMouseCheck_->isChecked();
 }
 
 bool PlaybackWidget::isDryRun() const

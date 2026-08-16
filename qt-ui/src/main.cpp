@@ -23,7 +23,7 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
     
     app.setApplicationName("L33T R3PL4Y");
-    app.setApplicationVersion("1.0.0");
+    app.setApplicationVersion("1.0.1");
     app.setOrganizationName("InputPlay");
     
     // Set default font

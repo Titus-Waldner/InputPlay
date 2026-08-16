@@ -46,6 +46,7 @@ public:
     bool isDryRun() const;
 	bool alignStartEnabled() const;
     bool isLooping() const;
+	bool blockPhysicalMouseEnabled() const;
 
     int loopCount() const;
 
@@ -146,6 +147,9 @@ private:
 
     QCheckBox* alignStartCheck_ =
         nullptr;
+		
+	QCheckBox* blockPhysicalMouseCheck_ = 
+	    nullptr;
 
     // Playback progress.
     QProgressBar* progressBar_ =
