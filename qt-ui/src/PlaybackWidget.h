@@ -63,9 +63,6 @@ signals:
 
     void stopRequested();
 
-    void speedChanged(
-        double speed);
-
     void progressUpdated(
         const PlaybackProgress& progress);
 
@@ -125,13 +122,6 @@ private:
         nullptr;
 
     QPushButton* stopButton_ =
-        nullptr;
-
-    // Speed controls.
-    QSlider* speedSlider_ =
-        nullptr;
-
-    QLabel* speedLabel_ =
         nullptr;
 
     // Loop controls.

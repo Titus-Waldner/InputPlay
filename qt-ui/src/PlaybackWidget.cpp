@@ -93,39 +93,7 @@ void PlaybackWidget::setupUi()
     QLabel* speedTitleLabel = new QLabel(tr("Speed:"));
     transportLayout->addWidget(
 		speedTitleLabel);
-    
-    speedSlider_ = new QSlider(Qt::Horizontal);
-    speedSlider_->setMinimum(25);
-    speedSlider_->setMaximum(400);
-    speedSlider_->setValue(100);
-    speedSlider_->setTickInterval(25);
-    speedSlider_->setMinimumWidth(
-		180);
-
-	speedSlider_->setMaximumWidth(
-		16777215);
-
-	speedSlider_->setSizePolicy(
-		QSizePolicy::Expanding,
-		QSizePolicy::Fixed);
-    speedSlider_->setToolTip(tr("Playback speed (25% - 400%)"));
-    transportLayout->addWidget(
-		speedSlider_,
-		1);
-    
-    speedLabel_ = new QLabel(tr("100%"));
-    speedLabel_->setMinimumWidth(45);
-    speedLabel_->setAlignment(
-		Qt::AlignRight
-		| Qt::AlignVCenter);
-
-	transportLayout->addWidget(
-		speedLabel_);
-		
-    connect(speedSlider_, &QSlider::valueChanged, this, [this](int value) {
-        speedLabel_->setText(tr("%1%").arg(value));
-        emit speedChanged(value / 100.0);
-    });
+   
     
     transportLayout->addStretch();
     
@@ -413,7 +381,6 @@ void PlaybackWidget::updateButtonStates()
     stopButton_->setEnabled(playing_);
     
     // Disable options during playback
-    speedSlider_->setEnabled(!playing_);
     loopCombo_->setEnabled(!playing_);
     loopSpinBox_->setEnabled(!playing_);
     dryRunCheck_->setEnabled(!playing_);
@@ -482,8 +449,7 @@ void PlaybackWidget::updateProgressDisplay(const PlaybackProgress& progress)
 
 double PlaybackWidget::speed() const
 {
-    // Slider is in percentage: 25-400, 100 = 1.0x
-    return speedSlider_->value() / 100.0;
+    return 1.0;
 }
 
 bool PlaybackWidget::blockPhysicalMouseEnabled() const

@@ -1148,8 +1148,7 @@ void MainWindow::setupConnections()
     connect(playbackWidget_, &PlaybackWidget::pauseRequested, playbackThread_, &PlaybackThread::pause);
     connect(playbackWidget_, &PlaybackWidget::resumeRequested, playbackThread_, &PlaybackThread::resume);
     connect(playbackWidget_, &PlaybackWidget::stopRequested, playbackThread_, &PlaybackThread::stop);
-    
-    connect(playbackWidget_, &PlaybackWidget::speedChanged, playbackThread_, &PlaybackThread::setSpeed);
+
     
     // Search widget connections
     connect(searchWidget_, &SearchWidget::navigateToResult, this, [this](int index) {
