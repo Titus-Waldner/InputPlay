@@ -2,9 +2,12 @@
 #include "PlaybackEngine.h"
 #include "DryRunBackend.h"
 #include "SendInputBackend.h"
+#include "RecordingFile.h"
 
+#include <QTemporaryFile>
 #include <QElapsedTimer>
 #include <QMutexLocker>
+#include <functional>
 
 PlaybackThread::PlaybackThread(QObject* parent)
     : QThread(parent)
@@ -140,51 +143,104 @@ void PlaybackThread::run()
 {
     emit playbackStarted();
 
-    if (dryRun_)
+    try
     {
-        backend_ =
-            std::make_unique<DryRunBackend>();
-    }
-    else
-    {
-        backend_ =
-            std::make_unique<SendInputBackend>();
-    }
+        Recording playbackRecording =
+            recording_;
 
-    /*
-     * Align the cursor before playback begins.
-     */
-    if (alignStart_
-        && recording_.hasStartingCursorPosition())
-    {
-        InputEvent alignEvent;
+        double currentSpeed;
 
-        alignEvent.type =
-            EventType::MouseTeleport;
+        {
+            QMutexLocker locker(
+                &mutex_);
 
-        alignEvent.mouseX =
-            recording_.startingCursorX();
+            currentSpeed =
+                speed_;
+        }
 
-        alignEvent.mouseY =
-            recording_.startingCursorY();
+        if (currentSpeed <= 0.0)
+        {
+            currentSpeed =
+                1.0;
+        }
 
-        std::string errorMessage;
+        /*
+         * PlaybackEngine owns the authoritative scheduler.
+         *
+         * Scale a temporary copy of the recording so the GUI speed
+         * control remains available without maintaining a second
+         * playback implementation.
+         */
+        if (currentSpeed != 1.0)
+        {
+            Recording scaledRecording;
 
-        if (!backend_->execute(
-                alignEvent,
-                errorMessage))
+            if (playbackRecording
+                    .hasStartingCursorPosition())
+            {
+                scaledRecording
+                    .setStartingCursorPosition(
+                        playbackRecording
+                            .startingCursorX(),
+                        playbackRecording
+                            .startingCursorY());
+            }
+
+            if (playbackRecording
+                    .hasDisplayMetadata())
+            {
+                scaledRecording
+                    .setDisplayMetadata(
+                        playbackRecording
+                            .displayMetadata());
+            }
+
+            for (const InputEvent& originalEvent
+                 : playbackRecording.events())
+            {
+                InputEvent scaledEvent =
+                    originalEvent;
+
+                scaledEvent.timestampMicroseconds =
+                    static_cast<std::uint64_t>(
+                        static_cast<double>(
+                            originalEvent
+                                .timestampMicroseconds)
+                        / currentSpeed);
+
+                scaledEvent.waitMicroseconds =
+                    static_cast<std::uint64_t>(
+                        static_cast<double>(
+                            originalEvent
+                                .waitMicroseconds)
+                        / currentSpeed);
+
+                scaledRecording.addEvent(
+                    scaledEvent);
+            }
+
+            playbackRecording =
+                scaledRecording;
+        }
+
+        QTemporaryFile temporaryFile;
+
+        temporaryFile.setAutoRemove(
+            true);
+
+        if (!temporaryFile.open())
         {
             PlaybackResult result;
 
             result.code =
-                PlaybackResultCode::BackendFailed;
+                PlaybackResultCode::InternalError;
 
             result.message =
-                errorMessage;
+                "Unable to create the temporary playback file.";
 
             const QString errorText =
                 QString::fromStdString(
-                    errorMessage);
+                    result.message);
 
             emit playbackError(
                 errorText);
@@ -197,413 +253,112 @@ void PlaybackThread::run()
 
             emit playbackStopped();
 
-            backend_.reset();
+            return;
+        }
+
+        const QString temporaryPath =
+            temporaryFile.fileName();
+
+        temporaryFile.close();
+
+        std::string saveError;
+
+        if (!RecordingFile::save(
+                playbackRecording,
+                temporaryPath.toStdString(),
+                saveError))
+        {
+            PlaybackResult result;
+
+            result.code =
+                PlaybackResultCode::InternalError;
+
+            result.message =
+                saveError;
+
+            const QString errorText =
+                QString::fromStdString(
+                    saveError);
+
+            emit playbackError(
+                errorText);
+
+            emit error(
+                errorText);
+
+            emit playbackCompleted(
+                result);
+
+            emit playbackStopped();
 
             return;
         }
-    }
 
-    try
-    {
-        PlaybackResult result;
-
-        result.code =
-            PlaybackResultCode::Completed;
-
-        const auto& events =
-            recording_.events();
-
-        const std::size_t totalEvents =
-            events.size();
-
-        for (unsigned int loop = 1;
-             options_.infiniteLoops
-                 || loop <= options_.loopCount;
-             ++loop)
+        if (dryRun_)
         {
-            {
-                QMutexLocker locker(
-                    &mutex_);
-
-                if (shouldStop_
-                    || controller_->
-                        cancellationRequested())
-                {
-                    result.code =
-                        PlaybackResultCode::Cancelled;
-
-                    result.completedLoops =
-                        loop - 1;
-
-                    backend_->releaseAll();
-
-                    emit playbackCompleted(
-                        result);
-
-                    emit playbackStopped();
-
-                    backend_.reset();
-
-                    return;
-                }
-            }
-
-            /*
-             * Use one absolute clock for the entire loop.
-             * This prevents timing errors from accumulating.
-             */
-            QElapsedTimer playbackClock;
-
-            playbackClock.start();
-
-            std::uint64_t addedWaitMicroseconds =
-                0;
-
-            std::uint64_t pausedMicroseconds =
-                0;
-
-            for (std::size_t index = 0;
-                 index < totalEvents;
-                 ++index)
-            {
-                const InputEvent& event =
-                    events[index];
-
-                double currentSpeed;
-
-                {
-                    QMutexLocker locker(
-                        &mutex_);
-
-                    currentSpeed =
-                        speed_;
-                }
-
-                if (currentSpeed <= 0.0)
-                {
-                    currentSpeed =
-                        1.0;
-                }
-
-                /*
-                 * Calculate this event's absolute playback time.
-                 *
-                 * Explicit Wait events extend the timestamps of all
-                 * events that follow them.
-                 */
-                const std::uint64_t logicalTarget =
-                    event.timestampMicroseconds
-                    + addedWaitMicroseconds;
-
-                const std::uint64_t scaledTarget =
-                    static_cast<std::uint64_t>(
-                        static_cast<double>(
-                            logicalTarget)
-                        / currentSpeed);
-
-                /*
-                 * Wait until the absolute target time.
-                 */
-                while (true)
-                {
-                    {
-                        QMutexLocker locker(
-                            &mutex_);
-
-                        if (shouldStop_
-                            || controller_->
-                                cancellationRequested())
-                        {
-                            result.code =
-                                PlaybackResultCode::Cancelled;
-
-                            result.completedLoops =
-                                loop - 1;
-
-                            result.completedEvents =
-                                index;
-
-                            backend_->releaseAll();
-
-                            PlaybackProgress progress;
-
-                            progress.state =
-                                PlaybackState::Cancelled;
-
-                            progress.currentLoop =
-                                loop;
-
-                            progress.totalLoops =
-                                options_.loopCount;
-
-                            progress.infiniteLoops =
-                                options_.infiniteLoops;
-
-                            progress.completedEvents =
-                                index;
-
-                            progress.totalEvents =
-                                totalEvents;
-
-                            emit progressChanged(
-                                progress);
-
-                            emit playbackCompleted(
-                                result);
-
-                            emit playbackStopped();
-
-                            backend_.reset();
-
-                            return;
-                        }
-                    }
-
-                    /*
-                     * Paused time must not advance playback.
-                     */
-                    if (controller_->paused())
-                    {
-                        QElapsedTimer pauseClock;
-
-                        pauseClock.start();
-
-                        while (controller_->paused())
-                        {
-                            {
-                                QMutexLocker locker(
-                                    &mutex_);
-
-                                if (shouldStop_
-                                    || controller_->
-                                        cancellationRequested())
-                                {
-                                    result.code =
-                                        PlaybackResultCode::
-                                            Cancelled;
-
-                                    result.completedLoops =
-                                        loop - 1;
-
-                                    result.completedEvents =
-                                        index;
-
-                                    backend_->releaseAll();
-
-                                    emit playbackCompleted(
-                                        result);
-
-                                    emit playbackStopped();
-
-                                    backend_.reset();
-
-                                    return;
-                                }
-                            }
-
-                            msleep(
-                                10);
-                        }
-
-                        const qint64 pauseNanoseconds =
-                            pauseClock.nsecsElapsed();
-
-                        if (pauseNanoseconds > 0)
-                        {
-                            pausedMicroseconds +=
-                                static_cast<std::uint64_t>(
-                                    pauseNanoseconds
-                                    / 1000);
-                        }
-
-                        continue;
-                    }
-
-                    const qint64 elapsedNanoseconds =
-                        playbackClock.nsecsElapsed();
-
-                    const std::uint64_t elapsedMicroseconds =
-                        elapsedNanoseconds > 0
-                        ? static_cast<std::uint64_t>(
-                            elapsedNanoseconds
-                            / 1000)
-                        : 0;
-
-                    const std::uint64_t targetMicroseconds =
-                        scaledTarget
-                        + pausedMicroseconds;
-
-                    if (elapsedMicroseconds
-                        >= targetMicroseconds)
-                    {
-                        break;
-                    }
-
-                    const std::uint64_t remaining =
-                        targetMicroseconds
-                        - elapsedMicroseconds;
-
-                    if (remaining > 2000)
-                    {
-                        const std::uint64_t sleepMs =
-                            qMin<std::uint64_t>(
-                                remaining / 1000,
-                                10);
-
-                        msleep(
-                            static_cast<unsigned long>(
-                                sleepMs));
-                    }
-                    else
-                    {
-                        usleep(
-                            static_cast<unsigned long>(
-                                qMin<std::uint64_t>(
-                                    remaining,
-                                    1000)));
-                    }
-                }
-
-                /*
-                 * Wait events are handled by the scheduler.
-                 * They must not be passed to the input backend.
-                 */
-                if (event.type == EventType::Wait)
-                {
-                    addedWaitMicroseconds +=
-                        event.waitMicroseconds;
-                }
-                else
-                {
-                    std::string errorMessage;
-
-                    if (!backend_->execute(
-                            event,
-                            errorMessage))
-                    {
-                        result.code =
-                            PlaybackResultCode::BackendFailed;
-
-                        result.message =
-                            errorMessage;
-
-                        result.completedLoops =
-                            loop - 1;
-
-                        result.completedEvents =
-                            index;
-
-                        backend_->releaseAll();
-
-                        const QString errorText =
-                            QString::fromStdString(
-                                errorMessage);
-
-                        emit playbackError(
-                            errorText);
-
-                        emit error(
-                            errorText);
-
-                        emit playbackCompleted(
-                            result);
-
-                        emit playbackStopped();
-
-                        backend_.reset();
-
-                        return;
-                    }
-                }
-
-                emit eventExecuted(
-                    static_cast<int>(
-                        index));
-
-                PlaybackProgress progress;
-
-                progress.state =
-                    PlaybackState::Playing;
-
-                progress.currentLoop =
-                    loop;
-
-                progress.totalLoops =
-                    options_.loopCount;
-
-                progress.infiniteLoops =
-                    options_.infiniteLoops;
-
-                progress.completedEvents =
-                    index + 1;
-
-                progress.totalEvents =
-                    totalEvents;
-
-                emit progressChanged(
-                    progress);
-            }
-
-            result.completedLoops =
-                loop;
-
-            result.completedEvents =
-                totalEvents;
-
-            PlaybackProgress loopProgress;
-
-            loopProgress.state =
-                PlaybackState::LoopCompleted;
-
-            loopProgress.currentLoop =
-                loop;
-
-            loopProgress.totalLoops =
-                options_.loopCount;
-
-            loopProgress.infiniteLoops =
-                options_.infiniteLoops;
-
-            loopProgress.completedEvents =
-                totalEvents;
-
-            loopProgress.totalEvents =
-                totalEvents;
-
-            emit progressChanged(
-                loopProgress);
-
-            if (!options_.infiniteLoops
-                && loop >= options_.loopCount)
-            {
-                break;
-            }
+            backend_ =
+                std::make_unique<DryRunBackend>();
         }
+        else
+        {
+            backend_ =
+                std::make_unique<SendInputBackend>();
+        }
+
+        PlaybackOptions engineOptions =
+            options_;
+
+        /*
+         * The GUI already owns the start control, so PlaybackEngine
+         * must begin immediately instead of waiting for the CLI key.
+         */
+        engineOptions.startImmediately =
+            true;
+
+        engineOptions.alignStart =
+            alignStart_;
+
+        PlaybackCallbacks callbacks;
+
+        callbacks.onProgress =
+			std::bind(
+				&PlaybackThread::handleEngineProgress,
+				this,
+				std::placeholders::_1);
+
+
+        PlaybackResult result =
+            runPlayback(
+                temporaryPath.toStdString(),
+                *backend_,
+                settings_,
+                engineOptions,
+                *controller_,
+                callbacks);
 
         backend_->releaseAll();
 
-        PlaybackProgress finalProgress;
+        if (result.code
+            == PlaybackResultCode::BackendFailed
+            || result.code
+                == PlaybackResultCode::InternalError
+            || result.code
+                == PlaybackResultCode::
+                    RecordingLoadFailed
+            || result.code
+                == PlaybackResultCode::
+                    DisplayIncompatible)
+        {
+            const QString errorText =
+                QString::fromStdString(
+                    result.message);
 
-        finalProgress.state =
-            PlaybackState::Completed;
+            emit playbackError(
+                errorText);
 
-        finalProgress.currentLoop =
-            result.completedLoops;
-
-        finalProgress.totalLoops =
-            options_.loopCount;
-
-        finalProgress.infiniteLoops =
-            options_.infiniteLoops;
-
-        finalProgress.completedEvents =
-            totalEvents;
-
-        finalProgress.totalEvents =
-            totalEvents;
-
-        emit progressChanged(
-            finalProgress);
+            emit error(
+                errorText);
+        }
 
         emit playbackCompleted(
             result);
@@ -644,6 +399,21 @@ void PlaybackThread::run()
     backend_.reset();
 }
 
+void PlaybackThread::handleEngineProgress(
+    const PlaybackProgress& progress)
+{
+    emit progressChanged(
+        progress);
+
+    if (progress.totalEvents > 0
+        && progress.completedEvents > 0)
+    {
+        emit eventExecuted(
+            static_cast<int>(
+                progress.completedEvents - 1));
+    }
+}
+
 void PlaybackThread::setRecording(Recording* recording)
 {
     QMutexLocker locker(&mutex_);
@@ -652,6 +422,7 @@ void PlaybackThread::setRecording(Recording* recording)
         recording_ = *recording;
     }
 }
+
 
 void PlaybackThread::setSpeed(double speed)
 {

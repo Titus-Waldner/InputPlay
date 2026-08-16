@@ -7,9 +7,11 @@
 #include "PlaybackController.h"
 #include "Settings.h"
 
+#include <functional>
 #include <QThread>
 #include <QMutex>
 #include <memory>
+
 
 class IInputBackend;
 
@@ -69,6 +71,7 @@ protected:
     void run() override;
 
 private:
+	void handleEngineProgress(const PlaybackProgress& progress);
 	bool waitForDelay(
 		std::uint64_t delayMicroseconds);
     Recording recording_;
