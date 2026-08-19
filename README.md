@@ -1,840 +1,124 @@
-# InputPlay
+# L33T R3PL4Y
 
-InputPlay is a Windows command-line mouse and keyboard recording and playback tool.
+**Record. Edit. Replay.**
 
-InputPlay records:
+L33T R3PL4Y is a Windows input recorder, macro editor, and playback application built with C++20 and Qt 6.
 
-- Relative mouse movement
-- Mouse button presses and releases
-- Vertical mouse-wheel input
-- Keyboard key presses and releases
-- Event timing
-- Cursor position when recording begins
-- Cursor teleport events after recording resumes
-- Monitor arrangement and virtual-desktop geometry
+The application records mouse and keyboard activity into editable `.irec` files and replays the events using their original timing.
 
-Recordings are stored as readable `.irec` files.
+## Features
 
-## Package Contents
+- Mouse and keyboard recording
+- High-resolution event timestamps
+- Editable event list and timeline
+- Playback progress and timeline highlighting
+- Pause, resume, stop, and emergency-stop controls
+- Finite and infinite looping
+- Starting-cursor alignment
+- Display-configuration validation
+- Dry Run mode
+- Physical mouse blocking for Windows input modes
+- Windows SendInput playback
+- Optional Virtual HID playback
+- Original InputPlay command-line interface included in releases
 
-```text
-InputPlay/
-├── InputPlay.exe
-├── settings.config
-├── README.md
-└── recordings/
-    └── example.irec
-```
+## Input Methods
 
-InputPlay is statically linked and does not require MSYS2, MinGW, or additional runtime DLLs.
+L33T R3PL4Y provides four playback methods.
 
-## Quick Start
+### Windows - Exact Position
 
-Open PowerShell, Command Prompt, or Windows Terminal in the InputPlay folder.
+Replays recorded absolute cursor coordinates through Windows `SendInput`.
 
-Display help:
+This mode provides the highest desktop-position accuracy and prevents accumulated cursor drift.
 
-```powershell
-.\InputPlay.exe --help
-```
+Keyboard events are also submitted through `SendInput`.
 
-Inspect the example recording:
+### Windows - Corrected Relative
 
-```powershell
-.\InputPlay.exe info .\recordings\example.irec
-```
+Replays recorded relative mouse movement through Windows `SendInput`.
 
-Validate the example recording:
+The application compares the live cursor position with the recorded path and corrects positional drift during playback.
 
-```powershell
-.\InputPlay.exe validate .\recordings\example.irec
-```
+Keyboard events are submitted through `SendInput`.
 
-Perform a safe dry run:
+### Virtual HID - Corrected Relative
 
-```powershell
-.\InputPlay.exe play .\recordings\example.irec
-```
+Replays relative mouse reports through the Generic Virtual Input Device.
 
-A dry run processes event timing without sending mouse or keyboard input.
+The application checks the live cursor position and corrects accumulated positional drift while continuing to submit relative HID movement.
 
-## Commands
+Keyboard events are submitted through the Virtual HID keyboard.
 
-```text
-record <file>
-play <file> [options]
-pause <session>
-resume <session>
-cancel <session>
-info <file>
-validate <file>
-test-model
-exit-codes
-```
+### Virtual HID - Exact Position
 
-Display the current command list:
+Replays recorded absolute cursor coordinates through the Generic Virtual Input Device.
 
-```powershell
-.\InputPlay.exe --help
-```
+Absolute Virtual HID coordinates currently apply to the primary monitor.
 
-## Recording
+Keyboard events are submitted through the Virtual HID keyboard.
 
-Start a new recording:
+## Virtual HID Driver
 
-```powershell
-.\InputPlay.exe record .\recordings\my-recording.irec
-```
+The Virtual HID input methods require the separate **DriverLevelInputSimulator** project:
 
-Default recording controls:
+https://github.com/Titus-Waldner/DriverLevelInputSimulator
 
-```text
-F9   Start recording
-F10  Pause or resume recording
-F12  Stop and save
-```
+Install and verify the Generic Virtual Input Device before selecting either Virtual HID method.
 
-Before recording starts, pressing the stop key cancels the operation and returns exit code `4`.
+The current Virtual HID driver is a development and test build. Review the driver repository’s installation instructions and safety notes before installation.
 
-While recording is paused:
+The current test-signed driver requires:
 
-- Mouse and keyboard events are ignored.
-- Paused time is removed from the recorded timeline.
-- Resuming inserts a cursor teleport event at the current cursor position.
-- The start, pause, and stop control keys are excluded from the recording.
+- 64-bit Windows 10 or later
+- Administrator privileges for installation
+- Secure Boot disabled
+- Windows Test Mode enabled
+- A restart after enabling Test Mode
 
-InputPlay can capture mouse and keyboard input together. The reusable core API also supports mouse-only and keyboard-only recording modes.
+The normal Windows input methods do not require the Virtual HID driver.
 
-## Recording Information
+## Physical Mouse Blocking
 
-Display a recording summary:
+The **Block physical mouse input** option prevents physical mouse activity from interfering with Windows-based playback.
 
-```powershell
-.\InputPlay.exe info .\recordings\my-recording.irec
-```
+Physical mouse blocking is automatically unavailable when a Virtual HID method is selected because the current low-level blocker cannot reliably distinguish the virtual mouse from a physical mouse.
 
-The summary includes:
+F9 and Emergency Stop remain available during Windows protected playback.
 
-- Event count
-- Recording duration
-- Starting cursor position
-- Monitor count
-- Virtual desktop dimensions
-- Individual monitor positions and resolutions
-- Mouse movement event count
-- Mouse teleport event count
-- Mouse button event count
-- Mouse wheel event count
-- Keyboard event count
-- Wait event count
-- Current display compatibility
+## Hotkeys
 
-## Recording Validation
+The default workspace-dependent hotkeys are:
 
-Validate a recording:
+- `F9` — Start or stop recording/playback
+- `F10` — Pause or resume recording/playback
+- `Ctrl+Shift+Escape` — Emergency Stop
 
-```powershell
-.\InputPlay.exe validate .\recordings\my-recording.irec
-```
+Only one copy of L33T R3PL4Y should be running at a time. An older instance, including one minimized to the system tray, may retain ownership of the global hotkeys.
 
-Validation checks include:
+## Recording Format
 
-- Timestamp ordering
-- Keyboard key-down and key-up balance
-- Mouse button-down and button-up balance
-- Valid monitor geometry
-- Valid starting cursor position
-- Valid mouse teleport coordinates
-- Unsupported mouse buttons
-- Empty or zero-distance events
-- Keys or mouse buttons still held at the end
+Recordings use the `.irec` format.
 
-Warnings do not make a recording invalid. Structural errors return exit code `7`.
+Each mouse-movement event stores:
 
-## Dry-Run Playback
+- Event timestamp
+- Absolute X and Y coordinates
+- Relative X and Y movement
+- Mouse-button state
+- Wheel information
 
-Dry-run playback processes event timing without sending real input:
+Storing both absolute positions and relative movement allows the same recording to be replayed through exact-position and corrected-relative input methods.
 
-```powershell
-.\InputPlay.exe play .\recordings\my-recording.irec
-```
+## Installation
 
-Default playback controls:
+Download the latest Windows x64 ZIP from the GitHub Releases page:
+
+https://github.com/Titus-Waldner/L33T-R3PL4Y/releases
+
+Extract the complete archive and keep all included files together.
+
+Run:
 
 ```text
-F9   Start playback
-F10  Pause or resume
-F12  Cancel
-```
-
-Dry-run mode is the default. Live input requires the explicit `--send-input` option.
-
-## Live Playback
-
-To send real mouse and keyboard input, specify `--send-input`:
-
-```powershell
-.\InputPlay.exe play .\recordings\my-recording.irec --send-input
-```
-
-Live playback can:
-
-- Move the pointer
-- Click mouse buttons
-- Scroll the mouse wheel
-- Type keyboard input
-- Trigger keyboard shortcuts
-
-Test recordings in dry-run mode before enabling live playback.
-
-## Align Cursor to Recorded Start
-
-Move the cursor to its recorded starting coordinate before each loop:
-
-```powershell
-.\InputPlay.exe play .\recordings\my-recording.irec `
-    --send-input `
-    --align-start
-```
-
-The cursor is aligned at the beginning of every loop, helping prevent accumulated positional drift.
-
-Older recordings may not contain a starting cursor position.
-
-## Start Immediately
-
-Skip the F9 start prompt:
-
-```powershell
-.\InputPlay.exe play .\recordings\my-recording.irec `
-    --start-immediately
-```
-
-This option is recommended for:
-
-- PowerShell scripts
-- Python programs
-- Scheduled tasks
-- Continuous integration
-- Other automated workflows
-
-## Playback Loops
-
-Play a recording three times:
-
-```powershell
-.\InputPlay.exe play .\recordings\my-recording.irec `
-    --loops 3
-```
-
-Loop indefinitely:
-
-```powershell
-.\InputPlay.exe play .\recordings\my-recording.irec `
-    --loops inf
-```
-
-Infinite playback should normally be paired with a timeout or named cancellation session.
-
-## Playback Timeout
-
-Stop playback automatically after a specified number of seconds:
-
-```powershell
-.\InputPlay.exe play .\recordings\my-recording.irec `
-    --loops inf `
-    --start-immediately `
-    --timeout 120
-```
-
-A timeout:
-
-- Stops scheduling events
-- Releases held keyboard keys
-- Releases held mouse buttons
-- Returns exit code `5`
-
-The timeout applies to the complete playback operation, including all loops and time spent paused.
-
-## Named Playback Sessions
-
-Named sessions allow another InputPlay process, PowerShell script, or Python program to control a running playback operation.
-
-Start a named blocking playback session:
-
-```powershell
-.\InputPlay.exe play .\recordings\my-recording.irec `
-    --send-input `
-    --align-start `
-    --start-immediately `
-    --loops inf `
-    --session report-run
-```
-
-The original process remains blocked while playback runs.
-
-### Pause a Named Session
-
-From another terminal or process:
-
-```powershell
-.\InputPlay.exe pause report-run
-```
-
-The playback process pauses at its current logical position.
-
-### Resume a Named Session
-
-```powershell
-.\InputPlay.exe resume report-run
-```
-
-Playback resumes without rushing through events whose timestamps passed while playback was paused.
-
-### Cancel a Named Session
-
-```powershell
-.\InputPlay.exe cancel report-run
-```
-
-The original playback process:
-
-- Stops scheduling events
-- Releases held keyboard keys
-- Releases held mouse buttons
-- Returns exit code `4`
-
-The original process remains blocked until playback completes, is cancelled, times out, or fails.
-
-Session names may contain:
-
-- Letters
-- Numbers
-- Hyphens
-- Underscores
-
-Session names may contain up to 64 characters.
-
-Only one active playback session may use a particular name at a time.
-
-## Display Compatibility
-
-InputPlay records:
-
-- Monitor count
-- Monitor positions
-- Monitor resolutions
-- Monitor work areas
-- Primary-monitor designation
-- Virtual-desktop position and size
-
-By default, InputPlay reports a warning when the current display setup differs from the recorded setup, then continues.
-
-Require a compatible display setup:
-
-```powershell
-.\InputPlay.exe play .\recordings\my-recording.irec `
-    --strict-display
-```
-
-Strict mode returns exit code `6` when compatibility cannot be established.
-
-Skip display validation:
-
-```powershell
-.\InputPlay.exe play .\recordings\my-recording.irec `
-    --ignore-display
-```
-
-The following options cannot be used together:
-
-```text
---strict-display
---ignore-display
-```
-
-## Full Playback Example
-
-```powershell
-.\InputPlay.exe play .\recordings\my-recording.irec `
-    --send-input `
-    --align-start `
-    --start-immediately `
-    --loops inf `
-    --session example-session `
-    --timeout 120 `
-    --strict-display
-```
-
-Another process can control that session:
-
-```powershell
-.\InputPlay.exe pause example-session
-.\InputPlay.exe resume example-session
-.\InputPlay.exe cancel example-session
-```
-
-## Settings
-
-InputPlay loads `settings.config` from the same directory as `InputPlay.exe`.
-
-If the file does not exist, InputPlay creates it automatically.
-
-Default settings:
-
-```ini
-# InputPlay settings
-# Supported shortcut names: F1 through F12
-
-record_start=F9
-record_pause=F10
-record_stop=F12
-
-play_start=F9
-play_pause=F10
-play_cancel=F12
-
-default_loops=1
-```
-
-Supported shortcut values are `F1` through `F12`.
-
-Restart InputPlay after modifying the settings file. Settings are loaded each time an InputPlay process starts.
-
-The control keys are read through Windows keyboard state rather than reserved as exclusive system-wide hotkeys.
-
-## Exit Codes
-
-Display the exit-code list:
-
-```powershell
-.\InputPlay.exe exit-codes
-```
-
-Exit-code contract:
-
-```text
-0  Success
-1  General failure
-2  Invalid command-line arguments
-3  Recording load or format failure
-4  Operation cancelled
-5  Operation timed out
-6  Display incompatibility
-7  Recording validation failure
-```
-
-These values are stable and intended for scripting integrations.
-
-## PowerShell Examples
-
-### Blocking Playback
-
-```powershell
-$arguments = @(
-    "play"
-    ".\recordings\example.irec"
-    "--send-input"
-    "--align-start"
-    "--start-immediately"
-    "--session"
-    "powershell-test"
-    "--timeout"
-    "120"
-)
-
-$process = Start-Process `
-    -FilePath ".\InputPlay.exe" `
-    -ArgumentList $arguments `
-    -PassThru `
-    -Wait
-
-Write-Host "InputPlay exit code: $($process.ExitCode)"
-```
-
-### Start Playback Without Waiting
-
-```powershell
-$arguments = @(
-    "play"
-    ".\recordings\example.irec"
-    "--start-immediately"
-    "--loops"
-    "inf"
-    "--session"
-    "powershell-test"
-    "--timeout"
-    "120"
-)
-
-$process = Start-Process `
-    -FilePath ".\InputPlay.exe" `
-    -ArgumentList $arguments `
-    -PassThru
-
-Write-Host "InputPlay process ID: $($process.Id)"
-```
-
-### Control the Session
-
-```powershell
-.\InputPlay.exe pause powershell-test
-.\InputPlay.exe resume powershell-test
-.\InputPlay.exe cancel powershell-test
-```
-
-### Wait and Read the Exit Code
-
-```powershell
-$process.WaitForExit()
-
-Write-Host "InputPlay exit code: $($process.ExitCode)"
-```
-
-## Python Examples
-
-### Blocking Playback
-
-```python
-import subprocess
-from pathlib import Path
-
-inputplay = Path("InputPlay.exe")
-recording = Path("recordings") / "example.irec"
-
-command = [
-    str(inputplay),
-    "play",
-    str(recording),
-    "--send-input",
-    "--align-start",
-    "--start-immediately",
-    "--session",
-    "python-test",
-    "--timeout",
-    "120",
-]
-
-result = subprocess.run(
-    command,
-    check=False,
-)
-
-if result.returncode == 0:
-    print("Playback completed.")
-elif result.returncode == 4:
-    print("Playback was cancelled.")
-elif result.returncode == 5:
-    print("Playback timed out.")
-else:
-    print(
-        f"Playback failed with exit code "
-        f"{result.returncode}."
-    )
-```
-
-### Start Playback Asynchronously
-
-```python
-import subprocess
-from pathlib import Path
-
-inputplay = Path("InputPlay.exe")
-recording = Path("recordings") / "example.irec"
-
-process = subprocess.Popen(
-    [
-        str(inputplay),
-        "play",
-        str(recording),
-        "--start-immediately",
-        "--loops",
-        "inf",
-        "--session",
-        "python-test",
-        "--timeout",
-        "120",
-    ]
-)
-
-print(f"InputPlay process ID: {process.pid}")
-```
-
-### Pause, Resume, and Cancel
-
-```python
-import subprocess
-
-subprocess.run(
-    ["InputPlay.exe", "pause", "python-test"],
-    check=False,
-)
-
-subprocess.run(
-    ["InputPlay.exe", "resume", "python-test"],
-    check=False,
-)
-
-subprocess.run(
-    ["InputPlay.exe", "cancel", "python-test"],
-    check=False,
-)
-```
-
-### Wait for Completion
-
-```python
-exit_code = process.wait()
-
-print(f"InputPlay exit code: {exit_code}")
-```
-
-## Architecture
-
-InputPlay separates its reusable core from the command-line interface.
-
-```text
-InputPlayCore
-├── Recording model and file format
-├── Recording validation
-├── Recording summaries
-├── Input recording engine
-├── Playback engine
-├── Thread-safe recording controller
-├── Thread-safe playback controller
-├── Structured recording options
-├── Structured playback options
-├── Structured recording results
-├── Structured playback results
-├── Structured progress callbacks
-├── Display compatibility
-├── Named session controls
-├── Settings model and persistence
-└── Windows input backends
-
-InputPlay CLI
-├── Command-line parsing
-├── Terminal presentation
-├── Runtime option construction
-├── Settings-file loading
-└── Process exit-code mapping
-```
-
-The recording and playback engines do not write directly to the terminal.
-
-Instead, the core reports structured states and progress information through callbacks. This allows the same core to support:
-
-- The InputPlay command-line interface
-- PowerShell and Python automation
-- Automated tests
-- A future Qt graphical interface
-
-Terminal formatting and process exit codes remain responsibilities of the CLI front end.
-
-## Building from Source
-
-### Requirements
-
-- Windows
-- MSYS2 UCRT64
-- GCC with C++20 support
-- CMake
-- Ninja
-
-Configure a development build:
-
-```bash
-cmake -S . -B build \
-    -G Ninja
-```
-
-Build:
-
-```bash
-cmake --build build
-```
-
-Run the CLI:
-
-```bash
-./build/InputPlay.exe --help
-```
-
-### Release Build
-
-Configure an optimized Release build:
-
-```bash
-cmake -S . -B build-release \
-    -G Ninja \
-    -DCMAKE_BUILD_TYPE=Release
-```
-
-Build:
-
-```bash
-cmake --build build-release
-```
-
-The MinGW runtime libraries are statically linked into the Release executable.
-
-## Automated Tests
-
-Configure and build the project:
-
-```bash
-cmake -S . -B build \
-    -G Ninja
-cmake --build build
-```
-
-Run the automated tests:
-
-```bash
-cd build
-ctest --output-on-failure
-```
-
-Alternatively, run the test executable directly:
-
-```bash
-./build/InputPlayCoreTests.exe
-```
-
-The test suite covers:
-
-- Recording summaries
-- Recording validation
-- Test backend execution
-- Input cleanup
-- Playback event order
-- Multiple playback loops
-- Structured progress states
-- Simulated backend failures
-- Timeout behavior
-- Pre-start cancellation
-- In-process cancellation
-- Cross-thread cancellation
-- Cross-thread pause and resume
-- Pause-duration timing compensation
-
-The automated tests use a test backend and do not send real mouse or keyboard input.
-
-## Safety Notes
-
-Before live playback:
-
-1. Validate the recording.
-2. Check display compatibility.
-3. Use a harmless test application first.
-4. Consider specifying a timeout.
-5. Use a named session for externally controllable automation.
-6. Keep the configured cancel shortcut available.
-7. Avoid running untrusted `.irec` files.
-
-InputPlay releases tracked keyboard keys and mouse buttons when playback:
-
-- Completes
-- Fails
-- Is cancelled
-- Times out
-
-## Troubleshooting
-
-### Recording Does Not Start
-
-Confirm the configured `record_start` key in `settings.config`.
-
-Press and release the configured key after this message appears:
-
-```text
-Recording armed
-```
-
-### Recording Cancels Before Starting
-
-The configured `record_stop` key was detected before the start key.
-
-Run the recording command again and press the configured start key. Deliberate pre-start cancellation returns exit code `4`.
-
-### Playback Does Not Send Input
-
-Live input requires:
-
-```text
---send-input
-```
-
-Without that option, InputPlay runs in safe dry-run mode.
-
-### Cursor Alignment Fails
-
-The recording may not contain a starting cursor position, or the recorded coordinate may no longer exist in the current virtual desktop.
-
-Inspect the file:
-
-```powershell
-.\InputPlay.exe info .\recordings\my-recording.irec
-```
-
-### Display Compatibility Warning
-
-The monitor arrangement, resolution, work area, or primary monitor differs from the recording environment.
-
-Use `info` to compare the recording with the current system:
-
-```powershell
-.\InputPlay.exe info .\recordings\my-recording.irec
-```
-
-### Named Session Cannot Be Created
-
-Another active InputPlay process may already use the same session name.
-
-Choose a different session name or cancel the existing session:
-
-```powershell
-.\InputPlay.exe cancel existing-session
-```
-
-### Pause or Resume Cannot Find a Session
-
-The requested session may have already completed, timed out, failed, or been cancelled.
-
-Confirm that the playback process is still active and that the session name matches exactly.
-
-### Function-Key Text Appears in a Terminal
-
-InputPlay reads configured function keys without registering exclusive global shortcuts.
-
-Depending on the terminal, a function-key sequence may remain queued after InputPlay exits. This does not affect the recording or playback result.
-
-For fully scripted playback, use:
-
-```text
---start-immediately
-```
-
-### Settings File Is Recreated
-
-InputPlay creates a default `settings.config` next to the executable when the file is missing.
-
-To restore custom settings, edit the newly created file or replace it with a backup.
-
-## Version Compatibility
-
-InputPlay continues to load supported earlier `.irec` recording versions.
-
-Newer recordings may contain additional metadata, including:
-
-- Starting cursor position
-- Monitor geometry
-- Cursor teleport events
-
-Use the `info` and `validate` commands to inspect older recordings before live playback.
-
-## License and Warranty
-
-InputPlay is provided without warranty.
-
-Test recordings carefully before using live playback in important workflows.
+L33TR3PL4Y.exe
