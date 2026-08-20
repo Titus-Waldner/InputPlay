@@ -796,6 +796,9 @@ void MainWindow::setupCentralWidget()
     recordingWidget_ =
         new RecordingWidget(
             recordingWorkspace_);
+	
+	recordingWidget_->setExistingRecording(
+		recording_.get());
 
     recordingLayout->addWidget(
         recordingWidget_,
@@ -1106,7 +1109,10 @@ void MainWindow::setupConnections()
 
 			playbackThread_->setDryRun(
 				playbackWidget_->isDryRun());
-			
+
+			playbackThread_->setInputBackendType(
+				playbackWidget_->inputBackendType());
+
 			playbackThread_->setAlignStart(
 				playbackWidget_->alignStartEnabled());
 				
@@ -1164,71 +1170,143 @@ void MainWindow::setupConnections()
     });
 }
 
-void MainWindow::loadMacro(const QString& filePath)
+void MainWindow::loadMacro(
+    const QString& filePath)
 {
-    if (!confirmDiscardChanges()) {
+    if (!confirmDiscardChanges())
+    {
         return;
     }
-    
+
     Recording newRecording;
     std::string errorMessage;
-    
-    if (!RecordingFile::load(filePath.toStdString(), newRecording, errorMessage)) {
-        QMessageBox::critical(this, tr("Load Error"),
-            tr("Failed to load macro:\n%1").arg(QString::fromStdString(errorMessage)));
+
+    if (!RecordingFile::load(
+            filePath.toStdString(),
+            newRecording,
+            errorMessage))
+    {
+        QMessageBox::critical(
+            this,
+            tr("Load Error"),
+            tr("Failed to load macro:\n%1")
+                .arg(
+                    QString::fromStdString(
+                        errorMessage)));
+
         return;
     }
-    
-    *recording_ = std::move(newRecording);
-    currentFilePath_ = filePath;
-    modified_ = false;
-    
+
+    *recording_ =
+        std::move(
+            newRecording);
+
+    currentFilePath_ =
+        filePath;
+
+    modified_ =
+        false;
+
     undoStack_->clear();
     undoStack_->setClean();
-    
-    eventModel_->setRecording(recording_.get());
-    infoPanel_->setRecording(recording_.get(), filePath);
-    timelineWidget_->setRecording(recording_.get());
-    playbackWidget_->setRecording(recording_.get());
+
+    eventModel_->setRecording(
+        recording_.get());
+
+    infoPanel_->setRecording(
+        recording_.get(),
+        filePath);
+
+    timelineWidget_->setRecording(
+        recording_.get());
+
+    playbackWidget_->setRecording(
+        recording_.get());
+
+    /*
+     * Refresh Continue Recording after loading events into the
+     * existing Recording object.
+     */
+    recordingWidget_->setExistingRecording(
+        recording_.get());
+
     propertyEditor_->clear();
-    searchWidget_->setRecording(recording_.get());
-    statisticsPanel_->setRecording(recording_.get());
-    
+
+    searchWidget_->setRecording(
+        recording_.get());
+
+    statisticsPanel_->setRecording(
+        recording_.get());
+
     updateWindowTitle();
     updateActionStates();
     updateStatusBar();
-    
-    addToRecentFiles(filePath);
-    statusLabel_->setText(tr("Loaded: %1").arg(QFileInfo(filePath).fileName()));
-    
-    emit macroLoaded(filePath);
+
+    addToRecentFiles(
+        filePath);
+
+    statusLabel_->setText(
+        tr("Loaded: %1")
+            .arg(
+                QFileInfo(
+                    filePath).fileName()));
+
+    emit macroLoaded(
+        filePath);
 }
 
 void MainWindow::newMacro()
 {
-    if (!confirmDiscardChanges()) {
+    if (!confirmDiscardChanges())
+    {
         return;
     }
-    
-    recording_ = std::make_unique<Recording>();
+
+    recording_ =
+        std::make_unique<Recording>();
+
+    /*
+     * recording_ now points to a new object. Update RecordingWidget
+     * immediately so it does not retain a stale pointer.
+     */
+    recordingWidget_->setExistingRecording(
+        recording_.get());
+
     currentFilePath_.clear();
-    modified_ = false;
-    
+
+    modified_ =
+        false;
+
     undoStack_->clear();
     undoStack_->setClean();
-    
-    eventModel_->setRecording(recording_.get());
-    infoPanel_->setRecording(recording_.get(), "");
-    timelineWidget_->setRecording(recording_.get());
-    playbackWidget_->setRecording(recording_.get());
+
+    eventModel_->setRecording(
+        recording_.get());
+
+    infoPanel_->setRecording(
+        recording_.get(),
+        QString());
+
+    timelineWidget_->setRecording(
+        recording_.get());
+
+    playbackWidget_->setRecording(
+        recording_.get());
+
     propertyEditor_->clear();
-    searchWidget_->setRecording(recording_.get());
-    statisticsPanel_->setRecording(recording_.get());
-    
+
+    searchWidget_->setRecording(
+        recording_.get());
+
+    statisticsPanel_->setRecording(
+        recording_.get());
+
     updateWindowTitle();
     updateActionStates();
-    
-    statusLabel_->setText(tr("New macro created"));
+    updateStatusBar();
+
+    statusLabel_->setText(
+        tr("New macro created"));
 }
 
 void MainWindow::openMacro()
@@ -1383,7 +1461,7 @@ void MainWindow::showAbout()
         tr(
             "<h2>L33T R3PL4Y</h2>"
             "<p><b>Record. Edit. Replay.</b></p>"
-            "<p>Version 1.0.1</p>"
+            "<p>Version 1.0.4</p>"
             "<p>"
             "A Windows application for recording, editing, "
             "and replaying mouse and keyboard input macros."
@@ -2404,12 +2482,55 @@ void MainWindow::onRecordingCompleted(
         return;
     }
 
-    *recording_ =
-        std::move(
-            *newRecording);
+	std::size_t firstNewEventIndex =
+		0;
 
-    currentFilePath_.clear();
-    modified_ = true;
+	if (recordingWidget_->isContinuingRecording()
+		&& !recording_->empty())
+	{
+		firstNewEventIndex =
+			recording_->eventCount();
+
+		const std::vector<InputEvent>& existingEvents =
+			recording_->events();
+
+		const std::uint64_t timestampOffset =
+			existingEvents.back()
+				.timestampMicroseconds
+			+ 1;
+
+		for (const InputEvent& capturedEvent
+			 : newRecording->events())
+		{
+			InputEvent appendedEvent =
+				capturedEvent;
+
+			appendedEvent.timestampMicroseconds +=
+				timestampOffset;
+
+			recording_->addEvent(
+				appendedEvent);
+		}
+
+		statusLabel_->setText(
+			tr("Appended %1 events")
+				.arg(
+					newRecording->eventCount()));
+	}
+	else
+	{
+		*recording_ =
+			std::move(
+				*newRecording);
+
+		firstNewEventIndex =
+			0;
+
+		currentFilePath_.clear();
+	}
+
+	modified_ =
+		true;
 
     undoStack_->clear();
 
@@ -2440,15 +2561,40 @@ void MainWindow::onRecordingCompleted(
 
     showEditorWorkspace();
 
-    if (recording_->eventCount() > 0)
-    {
-        eventListView_->selectEvent(0);
-    }
+	if (recording_->eventCount() > 0)
+	{
+		int selectedIndex =
+			static_cast<int>(
+				firstNewEventIndex);
 
-    statusLabel_->setText(
-        tr("Recorded %1 events")
-            .arg(
-                recording_->eventCount()));
+		if (selectedIndex
+			>= static_cast<int>(
+				recording_->eventCount()))
+		{
+			selectedIndex =
+				static_cast<int>(
+					recording_->eventCount()
+					- 1);
+		}
+
+		eventListView_->selectEvent(
+			selectedIndex);
+	}
+
+	if (recordingWidget_->isContinuingRecording())
+	{
+		statusLabel_->setText(
+			tr("Recording continued - %1 total events")
+				.arg(
+					recording_->eventCount()));
+	}
+	else
+	{
+		statusLabel_->setText(
+			tr("Recorded %1 events")
+				.arg(
+					recording_->eventCount()));
+	}
 
     if (trayManager_)
     {

@@ -14,6 +14,7 @@
 #include <QCheckBox>
 #include <QGroupBox>
 #include <QFrame>
+#include <QSettings>
 
 PlaybackWidget::PlaybackWidget(QWidget* parent)
     : QWidget(parent)
@@ -88,29 +89,119 @@ void PlaybackWidget::setupUi()
 		stopButton_);
     
     transportLayout->addSpacing(12);
-    
-    // Speed control
-    QLabel* speedTitleLabel = new QLabel(tr("Speed:"));
-    transportLayout->addWidget(
-		speedTitleLabel);
+	
+	transportLayout->addStretch();
+
    
     
-    transportLayout->addStretch();
-    
-    // Loop control
-    QLabel* loopTitleLabel = new QLabel(tr("Loops:"));
-    optionsLayout->addWidget(
+	QLabel* inputMethodLabel =
+		new QLabel(
+			tr("Input Method:"));
+
+	transportLayout->addWidget(
+		inputMethodLabel);
+
+	inputMethodCombo_ =
+		new QComboBox(
+			this);
+
+	inputMethodCombo_->addItem(
+		tr("Windows - Exact Position"),
+		static_cast<int>(
+			InputBackendType::
+				SendInputAbsolute));
+
+	inputMethodCombo_->addItem(
+		tr("Windows - Corrected Relative"),
+		static_cast<int>(
+			InputBackendType::
+				SendInputCorrectedRelative));
+
+	inputMethodCombo_->addItem(
+		tr("Virtual HID - Native Relative"),
+		static_cast<int>(
+			InputBackendType::
+				VhfNativeRelative));
+
+	inputMethodCombo_->addItem(
+		tr("Virtual HID - Corrected Relative (Experimental)"),
+		static_cast<int>(
+			InputBackendType::
+				VhfCorrectedRelative));
+
+	inputMethodCombo_->addItem(
+		tr("Virtual HID - Exact Position"),
+		static_cast<int>(
+			InputBackendType::
+				VhfAbsolute));
+
+	inputMethodCombo_->setCurrentIndex(
+		0);
+
+	inputMethodCombo_->setMinimumWidth(
+		260);
+
+	inputMethodCombo_->setMaximumWidth(
+		340);
+
+	inputMethodCombo_->setToolTip(
+		tr(
+			"Selects how recorded mouse and keyboard events "
+			"are submitted during playback."));
+
+	connect(
+		inputMethodCombo_,
+		QOverload<int>::of(
+			&QComboBox::currentIndexChanged),
+		this,
+		&PlaybackWidget::onInputMethodChanged);
+
+	transportLayout->addWidget(
+		inputMethodCombo_);
+
+	transportLayout->addSpacing(
+		12);
+	
+	QLabel* loopTitleLabel =
+		new QLabel(
+			tr("Loops:"));
+
+	optionsLayout->addWidget(
 		loopTitleLabel);
-    
-    loopCombo_ = new QComboBox();
-    loopCombo_->addItem(tr("1"), 1);
-    loopCombo_->addItem(tr("2"), 2);
-    loopCombo_->addItem(tr("3"), 3);
-    loopCombo_->addItem(tr("5"), 5);
-    loopCombo_->addItem(tr("10"), 10);
-    loopCombo_->addItem(tr("Custom..."), -1);
-    loopCombo_->addItem(tr("∞ Infinite"), 0);
-    loopCombo_->setMinimumWidth(
+
+	loopCombo_ =
+		new QComboBox(
+			this);
+
+	loopCombo_->addItem(
+		tr("1"),
+		1);
+
+	loopCombo_->addItem(
+		tr("2"),
+		2);
+
+	loopCombo_->addItem(
+		tr("3"),
+		3);
+
+	loopCombo_->addItem(
+		tr("5"),
+		5);
+
+	loopCombo_->addItem(
+		tr("10"),
+		10);
+
+	loopCombo_->addItem(
+		tr("Custom..."),
+		-1);
+
+	loopCombo_->addItem(
+		tr("∞ Infinite"),
+		0);
+
+	loopCombo_->setMinimumWidth(
 		120);
 
 	loopCombo_->setMaximumWidth(
@@ -118,13 +209,24 @@ void PlaybackWidget::setupUi()
 
 	optionsLayout->addWidget(
 		loopCombo_);
-    
-    loopSpinBox_ = new QSpinBox();
-    loopSpinBox_->setMinimum(1);
-    loopSpinBox_->setMaximum(9999);
-    loopSpinBox_->setValue(1);
-    loopSpinBox_->setVisible(false);
-    loopSpinBox_->setMinimumWidth(
+
+	loopSpinBox_ =
+		new QSpinBox(
+			this);
+
+	loopSpinBox_->setMinimum(
+		1);
+
+	loopSpinBox_->setMaximum(
+		9999);
+
+	loopSpinBox_->setValue(
+		1);
+
+	loopSpinBox_->setVisible(
+		false);
+
+	loopSpinBox_->setMinimumWidth(
 		90);
 
 	loopSpinBox_->setMaximumWidth(
@@ -132,14 +234,17 @@ void PlaybackWidget::setupUi()
 
 	optionsLayout->addWidget(
 		loopSpinBox_);
-    
-    connect(loopCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
-        int value = loopCombo_->itemData(index).toInt();
-        loopSpinBox_->setVisible(value == -1);
-    });
-    
-    optionsLayout->addSpacing(12);
-    
+
+	connect(
+		loopCombo_,
+		QOverload<int>::of(
+			&QComboBox::currentIndexChanged),
+		this,
+		&PlaybackWidget::onLoopSelectionChanged);
+
+	optionsLayout->addSpacing(
+		12);
+	
     // Mode checkboxes
     dryRunCheck_ = new QCheckBox(tr("Dry Run"));
     dryRunCheck_->setChecked(false);
@@ -174,8 +279,8 @@ void PlaybackWidget::setupUi()
 	connect(
 		dryRunCheck_,
 		&QCheckBox::toggled,
-		blockPhysicalMouseCheck_,
-		&QWidget::setDisabled);
+		this,
+		&PlaybackWidget::onDryRunChanged);
 
 	optionsLayout->addWidget(
 		blockPhysicalMouseCheck_);
@@ -228,7 +333,62 @@ void PlaybackWidget::setupUi()
 
 	setMaximumHeight(
 		165);
+		
+	restoreInputMethod();
 }
+
+void PlaybackWidget::restoreInputMethod()
+{
+    QSettings settings(
+        "InputPlay",
+        "Studio");
+
+    const int savedBackendValue =
+        settings.value(
+            "playback/inputBackend",
+            static_cast<int>(
+                InputBackendType::
+                    SendInputAbsolute))
+            .toInt();
+
+    int selectedIndex =
+        inputMethodCombo_->findData(
+            savedBackendValue);
+
+    if (selectedIndex < 0)
+    {
+        selectedIndex =
+            inputMethodCombo_->findData(
+                static_cast<int>(
+                    InputBackendType::
+                        SendInputAbsolute));
+    }
+
+    inputMethodCombo_->setCurrentIndex(
+        selectedIndex);
+
+    onInputMethodChanged(
+        selectedIndex);
+}
+
+void PlaybackWidget::onLoopSelectionChanged(
+    int index)
+{
+    if (!loopCombo_
+        || !loopSpinBox_)
+    {
+        return;
+    }
+
+    const int selectedValue =
+        loopCombo_->itemData(
+            index).toInt();
+
+    loopSpinBox_->setVisible(
+        selectedValue == -1);
+}
+
+
 
 void PlaybackWidget::setRecording(Recording* recording)
 {
@@ -372,19 +532,51 @@ void PlaybackWidget::onPlaybackError(const QString& message)
 
 void PlaybackWidget::updateButtonStates()
 {
-    bool hasRecording = recording_ && !recording_->empty();
-    
-    playButton_->setEnabled(hasRecording && (!playing_ || paused_));
-    playButton_->setText(paused_ ? tr("▶ Resume") : tr("▶ Play"));
-    
-    pauseButton_->setEnabled(playing_ && !paused_);
-    stopButton_->setEnabled(playing_);
-    
-    // Disable options during playback
-    loopCombo_->setEnabled(!playing_);
-    loopSpinBox_->setEnabled(!playing_);
-    dryRunCheck_->setEnabled(!playing_);
-    alignStartCheck_->setEnabled(!playing_);
+    const bool hasRecording =
+        recording_
+        && !recording_->empty();
+
+    playButton_->setEnabled(
+        hasRecording
+        && (!playing_ || paused_));
+
+    playButton_->setText(
+        paused_
+            ? tr("▶ Resume")
+            : tr("▶ Play"));
+
+    pauseButton_->setEnabled(
+        playing_
+        && !paused_);
+
+    stopButton_->setEnabled(
+        playing_);
+
+    loopCombo_->setEnabled(
+        !playing_);
+
+    loopSpinBox_->setEnabled(
+        !playing_);
+
+    inputMethodCombo_->setEnabled(
+        !playing_);
+
+    dryRunCheck_->setEnabled(
+        !playing_);
+
+    alignStartCheck_->setEnabled(
+        !playing_);
+
+    if (playing_)
+    {
+        blockPhysicalMouseCheck_->setEnabled(
+            false);
+
+        return;
+    }
+
+    onInputMethodChanged(
+        inputMethodCombo_->currentIndex());
 }
 
 void PlaybackWidget::updateProgressDisplay(const PlaybackProgress& progress)
@@ -454,8 +646,199 @@ double PlaybackWidget::speed() const
 
 bool PlaybackWidget::blockPhysicalMouseEnabled() const
 {
-    return blockPhysicalMouseCheck_
-        && blockPhysicalMouseCheck_->isChecked();
+    if (!blockPhysicalMouseCheck_
+        || !blockPhysicalMouseCheck_->isChecked())
+    {
+        return false;
+    }
+
+    const InputBackendType backendType =
+        inputBackendType();
+
+    return backendType
+            != InputBackendType::
+                VhfCorrectedRelative
+        && backendType
+            != InputBackendType::
+                VhfAbsolute
+        && backendType
+            != InputBackendType::
+                VhfNativeRelative;
+}
+InputBackendType PlaybackWidget::inputBackendType() const
+{
+    if (!inputMethodCombo_)
+    {
+        return InputBackendType::
+            SendInputAbsolute;
+    }
+
+    const int backendValue =
+        inputMethodCombo_->currentData().toInt();
+
+    switch (static_cast<InputBackendType>(
+                backendValue))
+    {
+		
+
+        case InputBackendType::
+            SendInputAbsolute:
+            return InputBackendType::
+                SendInputAbsolute;
+
+        case InputBackendType::
+            SendInputCorrectedRelative:
+            return InputBackendType::
+                SendInputCorrectedRelative;
+
+        case InputBackendType::
+            VhfCorrectedRelative:
+            return InputBackendType::
+                VhfCorrectedRelative;
+
+        case InputBackendType::
+            VhfAbsolute:
+            return InputBackendType::
+                VhfAbsolute;
+		case InputBackendType::
+			VhfNativeRelative:
+			return InputBackendType::
+				VhfNativeRelative;
+        default:
+            return InputBackendType::
+                SendInputAbsolute;
+    }
+}
+
+void PlaybackWidget::onInputMethodChanged(
+    int index)
+{
+    if (!inputMethodCombo_
+        || !blockPhysicalMouseCheck_
+        || index < 0)
+    {
+        return;
+    }
+
+    const InputBackendType backendType =
+        static_cast<InputBackendType>(
+            inputMethodCombo_->itemData(
+                index).toInt());
+
+    QSettings settings(
+        "InputPlay",
+        "Studio");
+
+    settings.setValue(
+        "playback/inputBackend",
+        static_cast<int>(
+            backendType));
+
+	const bool virtualHidSelected =
+		backendType
+			== InputBackendType::
+				VhfCorrectedRelative
+		|| backendType
+			== InputBackendType::
+				VhfAbsolute
+		|| backendType
+			== InputBackendType::
+				VhfNativeRelative;
+
+    if (virtualHidSelected)
+    {
+        blockPhysicalMouseCheck_->setChecked(
+            false);
+
+        blockPhysicalMouseCheck_->setEnabled(
+            false);
+
+        blockPhysicalMouseCheck_->setToolTip(
+            tr(
+                "Physical mouse blocking is unavailable with "
+                "Virtual HID playback because the current blocker "
+                "cannot distinguish the virtual mouse from the "
+                "physical mouse."));
+    }
+    else
+    {
+        blockPhysicalMouseCheck_->setEnabled(
+            !playing_
+            && !dryRunCheck_->isChecked());
+
+        blockPhysicalMouseCheck_->setToolTip(
+            tr(
+                "Prevents physical mouse movement, clicks, and "
+                "scrolling from interfering with real playback. "
+                "F9 and Emergency Stop remain available."));
+    }
+
+    switch (backendType)
+    {
+        case InputBackendType::
+            SendInputAbsolute:
+            inputMethodCombo_->setToolTip(
+                tr(
+                    "Replays the recorded absolute cursor path "
+                    "through Windows SendInput. Provides the "
+                    "highest desktop-position accuracy."));
+            break;
+
+        case InputBackendType::
+            SendInputCorrectedRelative:
+            inputMethodCombo_->setToolTip(
+                tr(
+                    "Replays relative movement through Windows "
+                    "SendInput and continuously corrects "
+                    "positional drift."));
+            break;
+
+		case InputBackendType::
+			VhfCorrectedRelative:
+			inputMethodCombo_->setToolTip(
+				tr(
+					"Experimental: replays relative movement through the "
+					"installed Virtual HID device and applies positional "
+					"feedback correction. This mode may oscillate on some "
+					"systems."));
+			break;
+			
+		case InputBackendType::
+			VhfNativeRelative:
+			inputMethodCombo_->setToolTip(
+				tr(
+					"Replays the original recorded relative mouse "
+					"movement through the installed Virtual HID device "
+					"without positional feedback correction. This is the "
+					"recommended Virtual HID relative mode."));
+			break;
+
+        case InputBackendType::
+            VhfAbsolute:
+            inputMethodCombo_->setToolTip(
+				tr(
+				"Replays the recorded absolute cursor path through "
+				"the installed Virtual HID device. Coordinates apply "
+				"to the primary monitor."));
+            break;
+			
+		
+    }
+}
+
+void PlaybackWidget::onDryRunChanged(
+    bool checked)
+{
+    Q_UNUSED(
+        checked);
+
+    if (!inputMethodCombo_)
+    {
+        return;
+    }
+
+    onInputMethodChanged(
+        inputMethodCombo_->currentIndex());
 }
 
 bool PlaybackWidget::isDryRun() const

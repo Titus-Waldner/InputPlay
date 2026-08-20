@@ -1,6 +1,13 @@
 #include "RecordingWidget.h"
 #include "RecordingThread.h"
 #include "DarkStyle.h"
+#include "Recording.h"
+#include "InputEvent.h"
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -176,6 +183,35 @@ void RecordingWidget::setupUi()
 
 	buttonLayout->addWidget(
 		recordButton_);
+		
+	continueButton_ =
+		new QPushButton(
+			tr("● Continue Recording"));
+
+	continueButton_->setProperty(
+		"primary",
+		false);
+
+	continueButton_->setMinimumHeight(
+		40);
+
+	continueButton_->setMinimumWidth(
+		170);
+
+	continueButton_->setToolTip(
+		tr(
+			"Move the cursor to the final recorded position "
+			"and append new input events to the current recording."));
+
+	connect(
+		continueButton_,
+		&QPushButton::clicked,
+		this,
+		&RecordingWidget::continueRecording);
+
+	buttonLayout->addWidget(
+		continueButton_);
+
 
 	pauseButton_ =
 		new QPushButton(
@@ -291,164 +327,90 @@ void RecordingWidget::updateButtonStates()
     const bool paused =
         recordingThread_->isPaused();
 
-    const bool countdown =
-        countdownActive_;
-
-    const bool active =
+    const bool busy =
         recording
-        || countdown;
+        || countdownActive_;
 
-    /*
-     * Ready:
-     *   Record is highlighted and enabled.
-     *
-     * Countdown:
-     *   Cancel is highlighted and enabled.
-     *
-     * Recording:
-     *   Pause, Stop, and Cancel are highlighted and enabled.
-     *
-     * Paused:
-     *   Resume, Stop, and Cancel are highlighted and enabled.
-     */
-    recordButton_->setProperty(
-        "primary",
-        !active);
+    const bool canContinue =
+        existingRecording_
+        && !existingRecording_->empty();
 
-    pauseButton_->setProperty(
-        "primary",
-        recording);
-
-    stopButton_->setProperty(
-        "primary",
-        recording);
-
-    cancelButton_->setProperty(
-        "primary",
-        active);
-
-    // Apply changed dynamic properties to the stylesheet.
-    recordButton_->style()->unpolish(
-        recordButton_);
-
-    recordButton_->style()->polish(
-        recordButton_);
-
-    pauseButton_->style()->unpolish(
-        pauseButton_);
-
-    pauseButton_->style()->polish(
-        pauseButton_);
-
-    stopButton_->style()->unpolish(
-        stopButton_);
-
-    stopButton_->style()->polish(
-        stopButton_);
-
-    cancelButton_->style()->unpolish(
-        cancelButton_);
-
-    cancelButton_->style()->polish(
-        cancelButton_);
-
-    /*
-     * Countdown is cancellable, but it cannot be paused or stopped
-     * as a completed recording because capture has not started yet.
-     */
     recordButton_->setEnabled(
-        !active);
+        !busy);
+
+    continueButton_->setEnabled(
+        !busy
+        && canContinue);
 
     pauseButton_->setEnabled(
         recording);
 
     stopButton_->setEnabled(
-        recording);
+        busy);
 
     cancelButton_->setEnabled(
-        active);
+        busy);
 
-    recordButton_->setText(
-        tr("● Record"));
+    captureMouseCheck_->setEnabled(
+        !busy);
 
-    if (paused)
-    {
-        pauseButton_->setText(
-            tr("▶ Resume"));
+    captureKeyboardCheck_->setEnabled(
+        !busy);
 
-        pauseButton_->setToolTip(
-            tr("Resume recording"));
-    }
-    else
+    countdownCheck_->setEnabled(
+        !busy);
+
+    countdownSpin_->setEnabled(
+        !busy
+        && countdownCheck_->isChecked());
+
+    if (!recording)
     {
         pauseButton_->setText(
             tr("⏸ Pause"));
 
-        pauseButton_->setToolTip(
-            tr("Pause recording"));
-    }
-
-    stopButton_->setText(
-        tr("■ Stop"));
-
-    cancelButton_->setText(
-        countdown
-        ? tr("× Cancel Countdown")
-        : tr("× Cancel"));
-
-    if (countdown)
-    {
-        cancelButton_->setToolTip(
-            tr("Cancel the recording countdown"));
-    }
-    else
-    {
-        cancelButton_->setToolTip(
-            tr("Cancel and discard the recording"));
-    }
-
-    captureMouseCheck_->setEnabled(
-        !active);
-
-    captureKeyboardCheck_->setEnabled(
-        !active);
-
-    countdownCheck_->setEnabled(
-        !active);
-
-    countdownSpin_->setEnabled(
-        !active
-        && countdownCheck_->isChecked());
-
-    if (countdown)
-    {
-        DarkStyle::setTone(
-            recordingIndicator_,
-            "accentLight");
-    }
-    else if (!recording)
-    {
         DarkStyle::setTone(
             recordingIndicator_,
             "secondary");
     }
     else if (paused)
     {
+        pauseButton_->setText(
+            tr("▶ Resume"));
+
         DarkStyle::setTone(
             recordingIndicator_,
             "accentLight");
     }
     else
     {
+        pauseButton_->setText(
+            tr("⏸ Pause"));
+
         DarkStyle::setTone(
             recordingIndicator_,
             "accent");
     }
 
     recordButton_->update();
+    continueButton_->update();
     pauseButton_->update();
     stopButton_->update();
     cancelButton_->update();
+}
+
+void RecordingWidget::setExistingRecording(
+    Recording* recording)
+{
+    existingRecording_ =
+        recording;
+
+    updateButtonStates();
+}
+
+bool RecordingWidget::isContinuingRecording() const
+{
+    return continueMode_;
 }
 
 void RecordingWidget::startRecording()
@@ -459,7 +421,9 @@ void RecordingWidget::startRecording()
         return;
     }
 
-    // Apply the selected recording options.
+    continueMode_ =
+        false;
+
     RecordingOptions options;
 
     options.captureMouse =
@@ -468,13 +432,12 @@ void RecordingWidget::startRecording()
     options.captureKeyboard =
         captureKeyboardCheck_->isChecked();
 
-    // The GUI controls when capture begins.
-    options.waitForStartKey = false;
+    options.waitForStartKey =
+        false;
 
     recordingThread_->setOptions(
         options);
 
-    // Reset the recording display.
     eventCountLabel_->setText(
         tr("Events: 0"));
 
@@ -487,10 +450,209 @@ void RecordingWidget::startRecording()
     }
     else
     {
-        recordingThread_->startRecording();
-        updateButtonStates();
+        beginRecordingCapture();
     }
 }
+
+void RecordingWidget::continueRecording()
+{
+    if (countdownActive_
+        || recordingThread_->isRunning())
+    {
+        return;
+    }
+
+    if (!existingRecording_
+        || existingRecording_->empty())
+    {
+        statusLabel_->setText(
+            tr("No existing recording to continue"));
+
+        emit statusChanged(
+            tr("No existing recording to continue"));
+
+        return;
+    }
+
+    continueMode_ =
+        true;
+
+    RecordingOptions options;
+
+    options.captureMouse =
+        captureMouseCheck_->isChecked();
+
+    options.captureKeyboard =
+        captureKeyboardCheck_->isChecked();
+
+    options.waitForStartKey =
+        false;
+
+    recordingThread_->setOptions(
+        options);
+
+    eventCountLabel_->setText(
+        tr("Existing events: %1")
+            .arg(
+                existingRecording_->eventCount()));
+
+    const std::vector<InputEvent>& events =
+        existingRecording_->events();
+
+    if (!events.empty())
+    {
+        durationLabel_->setText(
+            tr("Duration: %1")
+                .arg(
+                    formatDuration(
+                        events.back()
+                            .timestampMicroseconds)));
+    }
+
+    if (countdownCheck_->isChecked())
+    {
+        startCountdown();
+    }
+    else
+    {
+        beginRecordingCapture();
+    }
+}
+
+
+bool RecordingWidget::moveCursorToLastRecordedPosition()
+{
+    if (!existingRecording_
+        || existingRecording_->empty())
+    {
+        return false;
+    }
+
+    const std::vector<InputEvent>& events =
+        existingRecording_->events();
+
+    /*
+     * Prefer the final event that explicitly changes or establishes
+     * the cursor position.
+     *
+     * Do not prefer trailing wheel events because their stored
+     * coordinates may not be the best indication of the final
+     * recorded cursor destination.
+     */
+    for (auto eventIterator =
+             events.rbegin();
+         eventIterator != events.rend();
+         ++eventIterator)
+    {
+        const InputEvent& event =
+            *eventIterator;
+
+        const bool explicitPositionEvent =
+            event.type
+                == EventType::MouseMove
+            || event.type
+                == EventType::MouseTeleport;
+
+        if (!explicitPositionEvent)
+        {
+            continue;
+        }
+
+#ifdef _WIN32
+        return SetCursorPos(
+                   event.mouseX,
+                   event.mouseY)
+            != FALSE;
+#else
+        return false;
+#endif
+    }
+
+    /*
+     * A click-only recording may not contain a movement event.
+     * Use the final button event as a fallback in that case.
+     */
+    for (auto eventIterator =
+             events.rbegin();
+         eventIterator != events.rend();
+         ++eventIterator)
+    {
+        const InputEvent& event =
+            *eventIterator;
+
+        const bool buttonPositionEvent =
+            event.type
+                == EventType::MouseButtonDown
+            || event.type
+                == EventType::MouseButtonUp;
+
+        if (!buttonPositionEvent)
+        {
+            continue;
+        }
+
+#ifdef _WIN32
+        return SetCursorPos(
+                   event.mouseX,
+                   event.mouseY)
+            != FALSE;
+#else
+        return false;
+#endif
+    }
+
+    /*
+     * A keyboard-only recording has no final mouse position.
+     * Fall back to its saved starting cursor position if available.
+     */
+    if (existingRecording_
+            ->hasStartingCursorPosition())
+    {
+#ifdef _WIN32
+        return SetCursorPos(
+                   existingRecording_
+                       ->startingCursorX(),
+                   existingRecording_
+                       ->startingCursorY())
+            != FALSE;
+#else
+        return false;
+#endif
+    }
+
+    return false;
+}
+
+void RecordingWidget::beginRecordingCapture()
+{
+    if (continueMode_)
+    {
+        if (!moveCursorToLastRecordedPosition())
+        {
+            continueMode_ =
+                false;
+
+            statusLabel_->setText(
+                tr(
+                    "Unable to move the cursor to the "
+                    "final recorded position"));
+
+            emit statusChanged(
+                tr(
+                    "Continue Recording could not restore "
+                    "the final cursor position"));
+
+            updateButtonStates();
+
+            return;
+        }
+    }
+
+    recordingThread_->startRecording();
+
+    updateButtonStates();
+}
+
 
 void RecordingWidget::startCountdown()
 {
@@ -578,9 +740,7 @@ void RecordingWidget::onCountdownTick()
     statusLabel_->setText(
         tr("Recording..."));
 
-    recordingThread_->startRecording();
-
-    updateButtonStates();
+	beginRecordingCapture();
 }
 
 void RecordingWidget::stopRecording()

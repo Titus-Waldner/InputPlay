@@ -6,6 +6,7 @@
 
 #include <QWidget>
 
+class Recording;
 class QPushButton;
 class QLabel;
 class QCheckBox;
@@ -18,12 +19,18 @@ class RecordingWidget : public QWidget
     Q_OBJECT
 
 public:
+	
     explicit RecordingWidget(QWidget* parent = nullptr);
     ~RecordingWidget() override;
 
     bool isRecording() const;
 	bool isCountingDown() const;
     bool isPaused() const;
+	
+	void setExistingRecording(
+		Recording* recording);
+
+	bool isContinuingRecording() const;
     
     RecordingThread* recordingThread() const { return recordingThread_; }
 
@@ -34,6 +41,7 @@ signals:
     void statusChanged(const QString& status);
 
 public slots:
+	void continueRecording();
     void startRecording();
     void stopRecording();
     void cancelRecording();
@@ -46,8 +54,16 @@ private slots:
     void onCountdownTick();
 
 private:
+
+	void beginRecordingCapture();
+
+	bool moveCursorToLastRecordedPosition();
+
     void setupUi();
     void updateButtonStates();
+	Recording* existingRecording_ = nullptr;
+
+	bool continueMode_ = false;
     void startCountdown();
 	void cancelCountdown();
     QString formatDuration(uint64_t microseconds) const;
@@ -62,6 +78,7 @@ private:
     QPushButton* pauseButton_ = nullptr;
     QPushButton* stopButton_ = nullptr;
     QPushButton* cancelButton_ = nullptr;
+	QPushButton* continueButton_ = nullptr;
     
     QCheckBox* captureMouseCheck_ = nullptr;
     QCheckBox* captureKeyboardCheck_ = nullptr;

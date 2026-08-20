@@ -3,6 +3,7 @@
 #include "DryRunBackend.h"
 #include "SendInputBackend.h"
 #include "RecordingFile.h"
+#include "VhfInputBackend.h"
 
 #include <QTemporaryFile>
 #include <QElapsedTimer>
@@ -295,15 +296,119 @@ void PlaybackThread::run()
         }
 
         if (dryRun_)
-        {
-            backend_ =
-                std::make_unique<DryRunBackend>();
-        }
-        else
-        {
-            backend_ =
-                std::make_unique<SendInputBackend>();
-        }
+		{
+			backend_ =
+				std::make_unique<DryRunBackend>();
+		}
+		else
+		{
+			switch (backendType_)
+			{
+				case InputBackendType::
+					SendInputAbsolute:
+					backend_ =
+						std::make_unique<
+							SendInputBackend>(
+							InputBackendType::
+								SendInputAbsolute);
+					break;
+
+				case InputBackendType::
+					SendInputCorrectedRelative:
+					backend_ =
+						std::make_unique<
+							SendInputBackend>(
+							InputBackendType::
+								SendInputCorrectedRelative);
+					break;
+
+				case InputBackendType::
+					VhfCorrectedRelative:
+				case InputBackendType::
+					VhfAbsolute:
+				case InputBackendType::
+					VhfNativeRelative:
+				{
+					auto vhfBackend =
+						std::make_unique<
+							VhfInputBackend>(
+							backendType_);
+
+					std::string openErrorMessage;
+
+					if (!vhfBackend->open(
+							openErrorMessage))
+					{
+						PlaybackResult openResult;
+
+						openResult.code =
+							PlaybackResultCode::
+								BackendFailed;
+
+						openResult.message =
+							openErrorMessage;
+
+						openResult.completedLoops =
+							0;
+
+						openResult.completedEvents =
+							0;
+
+						const QString errorText =
+							QString::fromStdString(
+								openErrorMessage);
+
+						emit playbackError(
+							errorText);
+
+						emit error(
+							errorText);
+
+						emit playbackCompleted(
+							openResult);
+
+						emit playbackStopped();
+
+						return;
+					}
+
+					backend_ =
+						std::move(
+							vhfBackend);
+
+					break;
+				}
+
+				default:
+				{
+					PlaybackResult openResult;
+
+					openResult.code =
+						PlaybackResultCode::
+							InternalError;
+
+					openResult.message =
+						"The selected input backend is unknown.";
+
+					const QString errorText =
+						QString::fromStdString(
+							openResult.message);
+
+					emit playbackError(
+						errorText);
+
+					emit error(
+						errorText);
+
+					emit playbackCompleted(
+						openResult);
+
+					emit playbackStopped();
+
+					return;
+				}
+			}
+		}
 
         PlaybackOptions engineOptions =
             options_;
@@ -434,6 +539,16 @@ void PlaybackThread::setDryRun(bool dryRun)
 {
     QMutexLocker locker(&mutex_);
     dryRun_ = dryRun;
+}
+
+void PlaybackThread::setInputBackendType(
+    InputBackendType backendType)
+{
+    QMutexLocker locker(
+        &mutex_);
+
+    backendType_ =
+        backendType;
 }
 
 void PlaybackThread::setAlignStart(

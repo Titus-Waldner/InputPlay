@@ -6,6 +6,7 @@
 #include "PlaybackResult.h"
 #include "PlaybackController.h"
 #include "Settings.h"
+#include "InputBackendType.h"
 
 #include <functional>
 #include <QThread>
@@ -40,6 +41,8 @@ public:
     void setRecording(Recording* recording);
     void setSpeed(double speed);
     void setDryRun(bool dryRun);
+	void setInputBackendType(
+		InputBackendType backendType);
 	void setAlignStart(bool alignStart);
     void setLooping(
     bool looping);
@@ -79,6 +82,7 @@ private:
     Settings settings_;
     PlaybackOptions options_;
     bool dryRun_ = true;
+	InputBackendType backendType_ = InputBackendType::SendInputAbsolute;
     double speed_ = 1.0;
     bool looping_ = false;
 	bool alignStart_ = true;

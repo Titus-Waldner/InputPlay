@@ -4,6 +4,7 @@
 #include "PlaybackController.h"
 #include "PlaybackOptions.h"
 #include "PlaybackProgress.h"
+#include "InputBackendType.h"
 
 #include <QWidget>
 
@@ -44,6 +45,7 @@ public:
     double speed() const;
 
     bool isDryRun() const;
+	InputBackendType inputBackendType() const;
 	bool alignStartEnabled() const;
     bool isLooping() const;
 	bool blockPhysicalMouseEnabled() const;
@@ -67,6 +69,13 @@ signals:
         const PlaybackProgress& progress);
 
 public slots:
+
+	void onDryRunChanged(
+		bool checked);
+
+	void onLoopSelectionChanged(
+		int index);
+	
     void play();
 
     void pause();
@@ -93,8 +102,12 @@ public slots:
 
     void onPlaybackError(
         const QString& message);
+	void onInputMethodChanged(
+		int index);
 
 private:
+	void restoreInputMethod();
+
     void setupUi();
 
     void updateButtonStates();
@@ -132,6 +145,10 @@ private:
         nullptr;
 
     // Playback options.
+	
+	QComboBox* inputMethodCombo_ =
+		nullptr;
+	
     QCheckBox* dryRunCheck_ =
         nullptr;
 

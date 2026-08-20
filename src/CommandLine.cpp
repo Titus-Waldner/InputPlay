@@ -2,6 +2,8 @@
 #include "RecordingFile.h"
 #include "DryRunBackend.h"
 #include "SendInputBackend.h"
+#include "InputBackendType.h"
+#include "VhfInputBackend.h"
 #include "InputRecorder.h"
 #include "Settings.h"
 #include "SettingsFile.h"
@@ -72,7 +74,9 @@ void printHelp()
     std::cout << "  record <file>\n";
 
     std::cout
-				<< "  play <file> [--send-input] [--align-start] "
+				<< "[--send-input|--send-input-corrected|"
+				<< "--vhf-corrected|--vhf-absolute|--vhf-native] "
+				<< "[--align-start] "
 				<< "[--start-immediately] [--loops <number|inf>] "
 				<< "[--session <name>] [--timeout <seconds>] "
 				<< "[--strict-display|--ignore-display]\n";
@@ -1031,7 +1035,11 @@ int runCommandLine(
 			return ExitCode::InvalidArguments;
 		}
 
-		bool useSendInput = false;
+		bool useLiveInput =
+			false;
+
+		InputBackendType backendType =
+			InputBackendType::SendInputAbsolute;
 
 		PlaybackOptions options;
 		options.loopCount = settings.defaultLoops;
@@ -1045,9 +1053,48 @@ int runCommandLine(
 
 			if (option == "--send-input")
 			{
-				useSendInput = true;
+				useLiveInput =
+					true;
+
+				backendType =
+					InputBackendType::SendInputAbsolute;
 			}
-			else if (option == "--start-immediately")
+			else if (option == "--send-input-corrected")
+			{
+				useLiveInput =
+					true;
+
+				backendType =
+					InputBackendType::
+						SendInputCorrectedRelative;
+			}
+			else if (option == "--vhf-corrected")
+			{
+				useLiveInput =
+					true;
+
+				backendType =
+					InputBackendType::
+						VhfCorrectedRelative;
+			}
+			else if (option == "--vhf-absolute")
+			{
+				useLiveInput =
+					true;
+
+				backendType =
+					InputBackendType::VhfAbsolute;
+			}
+			else if (option == "--vhf-native")
+			{
+				useLiveInput =
+					true;
+
+				backendType =
+					InputBackendType::
+						VhfNativeRelative;
+			}
+						else if (option == "--start-immediately")
 			{
 				options.startImmediately = true;
 			}
@@ -1229,23 +1276,77 @@ int runCommandLine(
 		PlaybackCallbacks callbacks;
 		callbacks.onProgress = printPlaybackProgress;
 
-		if (useSendInput)
+		if (useLiveInput)
 		{
 			std::cout
 				<< "WARNING: Live input playback enabled\n";
 
-			SendInputBackend backend;
+			switch (backendType)
+			{
+				case InputBackendType::
+					SendInputAbsolute:
+				case InputBackendType::
+					SendInputCorrectedRelative:
+				{
+					SendInputBackend backend(
+						backendType);
 
-			const PlaybackResult result =
-			runPlayback(
-				argv[2],
-				backend,
-				settings,
-				options,
-				controller,
-				callbacks);
+					const PlaybackResult result =
+						runPlayback(
+							argv[2],
+							backend,
+							settings,
+							options,
+							controller,
+							callbacks);
 
-			return playbackResultToExitCode(result);
+					return playbackResultToExitCode(
+						result);
+				}
+
+				case InputBackendType::
+					VhfCorrectedRelative:
+				case InputBackendType::
+					VhfAbsolute:
+				case InputBackendType::
+					VhfNativeRelative:
+				{
+					VhfInputBackend backend(
+						backendType);
+
+					std::string openErrorMessage;
+
+					if (!backend.open(
+							openErrorMessage))
+					{
+						std::cerr
+							<< openErrorMessage
+							<< '\n';
+
+						return ExitCode::
+							GeneralFailure;
+					}
+
+					const PlaybackResult result =
+						runPlayback(
+							argv[2],
+							backend,
+							settings,
+							options,
+							controller,
+							callbacks);
+
+					return playbackResultToExitCode(
+						result);
+				}
+
+				default:
+					std::cerr
+						<< "Unknown live-input backend.\n";
+
+					return ExitCode::
+						InvalidArguments;
+			}
 		}
 
 		DryRunBackend backend;

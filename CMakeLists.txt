@@ -27,6 +27,7 @@ add_library(
 	src/RecordingSummary.cpp
 	src/PlaybackController.cpp
 	src/RecordingController.cpp
+	src/VhfInputBackend.cpp
 	
 )
 
